@@ -36,8 +36,6 @@ if __name__ == '__main__':
     mdlParams['trainSetState'] = 'train'
     mdlParams['saveDirBase'] = mdlParams['saveDir'] + sys.argv[2]
 
-
-
     # 2. 디바이스 설정 (MPS 지원 추가)
     if 'mps' in sys.argv[3]:
         device = torch.device("mps")
@@ -64,7 +62,7 @@ if __name__ == '__main__':
     for cv in cv_set:
         wandb.init(
         project="mediskin", # 프로젝트 이름
-        name=f"image-baseline{cv}", # 실험 이름
+        name=f"image-baseline-fold{cv}", # 실험 이름
         config=mdlParams # 하이퍼파라미터 기록
         )    
 
@@ -218,6 +216,7 @@ if __name__ == '__main__':
                       f"Recall: {mean_recall:.4f} | Precision: {mean_precision:.4f}")
 
         print(f"Fold {cv} Training Complete.")
+        wandb.finish()
 
     modelVars.clear()
-    wandb.finish()
+    
