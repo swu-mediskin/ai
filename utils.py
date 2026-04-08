@@ -3,6 +3,7 @@ import numpy as np
 from torch.utils.data import Dataset
 import torch.nn.functional as F
 import torch.nn as nn
+from torchvision import transforms
 from torchvision.transforms import InterpolationMode
 from sklearn.metrics import confusion_matrix, auc, roc_curve, f1_score
 import math
