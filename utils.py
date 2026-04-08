@@ -10,10 +10,12 @@ import torch.nn.functional as F
 import torch.nn as nn
 from torch.autograd import Variable
 from torchvision import transforms, utils
+from torchvision.transforms import InterpolationMode
 from sklearn.metrics import confusion_matrix, auc, roc_curve, f1_score, classification_report
 from sklearn.model_selection import StratifiedShuffleSplit
 import math
 from PIL import Image
+from torchvision.transforms import InterpolationMode
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.svm import SVC
@@ -226,9 +228,9 @@ class ISICDataset(Dataset):
             # Full rot
             if mdlParams.get('full_rot',0) > 0:
                 if mdlParams.get('scale',False):
-                    all_transforms.append(transforms.RandomChoice([transforms.RandomAffine(mdlParams['full_rot'], scale=mdlParams['scale'], shear=mdlParams.get('shear',0), resample=Image.NEAREST),
-                                                                transforms.RandomAffine(mdlParams['full_rot'],scale=mdlParams['scale'],shear=mdlParams.get('shear',0), resample=Image.BICUBIC),
-                                                                transforms.RandomAffine(mdlParams['full_rot'],scale=mdlParams['scale'],shear=mdlParams.get('shear',0), resample=Image.BILINEAR)])) 
+                    all_transforms.append(transforms.RandomChoice([transforms.RandomAffine(mdlParams['full_rot'], scale=mdlParams['scale'], shear=mdlParams.get('shear',0), interpolation=InterpolationMode.NEAREST),
+                                                                transforms.RandomAffine(mdlParams['full_rot'],scale=mdlParams['scale'],shear=mdlParams.get('shear',0), interpolation=InterpolationMode.BICUBIC),
+                                                                transforms.RandomAffine(mdlParams['full_rot'],scale=mdlParams['scale'],shear=mdlParams.get('shear',0), interpolation=InterpolationMode.BILINEAR)])) 
                 else:
                     all_transforms.append(transforms.RandomChoice([transforms.RandomRotation(mdlParams['full_rot'], resample=Image.NEAREST),
                                                                 transforms.RandomRotation(mdlParams['full_rot'], resample=Image.BICUBIC),
@@ -269,7 +271,10 @@ class ISICDataset(Dataset):
         if self.preload:
             x = self.im_list[idx]
         else:
-            x = Image.open(self.im_paths[idx])
+            x = Image.open(self.im_paths[idx]).convert('RGB')
+            if x.size[0] < self.input_size[0] or x.size[1] < self.input_size[1]:
+                # 224x224 크기로 리사이즈 (BILINEAR 보간법 사용)
+                x = x.resize((self.input_size[0], self.input_size[1]), Image.BILINEAR)
             if self.mdlParams.get('resize_large_ones',0) > 0 and (x.size[0] == self.mdlParams['large_size'] and x.size[1] == self.mdlParams['large_size']):
                 width = self.mdlParams['resize_large_ones']
                 height = self.mdlParams['resize_large_ones']
