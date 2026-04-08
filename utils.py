@@ -572,8 +572,8 @@ def getErrClassification_mgpu(mdlParams, indices, modelVars, exclude_class=None)
                 ind += 1
             # Get data
             if mdlParams.get('meta_features',None) is not None: 
-                inputs[0] = inputs[0].cuda()
-                inputs[1] = inputs[1].cuda()
+                inputs[0] = inputs[0].to(modelVars['device'])
+                inputs[1] = inputs[1].to(modelVars['device'])
             else:            
                 inputs = inputs.to(modelVars['device'])
             labels = labels.to(modelVars['device'])       
@@ -621,8 +621,8 @@ def getErrClassification_mgpu(mdlParams, indices, modelVars, exclude_class=None)
         for i, (inputs, labels, inds) in enumerate(modelVars['dataloader_'+indices]):
             # Get data
             if mdlParams.get('meta_features',None) is not None: 
-                inputs[0] = inputs[0].cuda()
-                inputs[1] = inputs[1].cuda()
+                inputs[0] = inputs[0].to(modelVars['device'])
+                inputs[1] = inputs[1].to(modelVars['device'])
             else:            
                 inputs = inputs.to(modelVars['device'])
             labels = labels.to(modelVars['device'])       
@@ -669,8 +669,8 @@ def getErrClassification_mgpu(mdlParams, indices, modelVars, exclude_class=None)
             for i, (inputs, labels, inds) in enumerate(modelVars['dataloader_'+indices]):
                 # Get data
                 if mdlParams.get('meta_features',None) is not None: 
-                    inputs[0] = inputs[0].cuda()
-                    inputs[1] = inputs[1].cuda()
+                    inputs[0] = inputs[0].to(modelVars['device'])
+                    inputs[1] = inputs[1].to(modelVars['device'])
                 else:            
                     inputs = inputs.to(modelVars['device'])
                 labels = labels.to(modelVars['device'])       
@@ -710,8 +710,8 @@ def getErrClassification_mgpu(mdlParams, indices, modelVars, exclude_class=None)
             for i, (inputs, labels, indices) in enumerate(modelVars['dataloader_'+indices]):
                 # Get data
                 if mdlParams.get('meta_features',None) is not None: 
-                    inputs[0] = inputs[0].cuda()
-                    inputs[1] = inputs[1].cuda()
+                    inputs[0] = inputs[0].to(modelVars['device'])
+                    inputs[1] = inputs[1].to(modelVars['device'])
                 else:            
                     inputs = inputs.to(modelVars['device'])
                 labels = labels.to(modelVars['device'])       
