@@ -71,7 +71,7 @@ if __name__ == '__main__':
         if not os.path.isdir(mdlParams['saveDirBase']): os.makedirs(mdlParams['saveDirBase'], exist_ok=True)
         if not os.path.isdir(mdlParams['saveDir']): os.makedirs(mdlParams['saveDir'], exist_ok=True)
 
-        # 인덱스 설정 (cfg에서 이미 생성됨)
+        # 인덱스 설정 
         mdlParams['trainInd'] = mdlParams['trainIndCV'][cv]
         mdlParams['valInd'] = mdlParams['valIndCV'][cv]
         eval_set = 'valInd'
@@ -81,6 +81,7 @@ if __name__ == '__main__':
         modelVars = {'device': device}
         modelVars['model'] = models.getModel(mdlParams)()
         modelVars['softmax'] = nn.Softmax(dim=1)
+        modelVars['device'] = device
 
         # 모델 마지막 레이어 수정 (EfficientNet-B0 기준)
         if 'efficient' in mdlParams['model_type']:
@@ -128,92 +129,91 @@ if __name__ == '__main__':
             if step >= mdlParams['lowerLRat'] - mdlParams['lowerLRAfter']:
                 modelVars['scheduler'].step()
 
-                # 평가 및 저장
-            if step % mdlParams['display_step'] == 0 or step == 1:
-                modelVars['model'].eval()
-                res = utils.getErrClassification_mgpu(mdlParams, eval_set, modelVars)
-                val_loss, accuracy, sensitivity, specificity, conf_matrix, f1, auc, waccuracy, predictions, targets, _ = res
+            # 평가 및 저장
+            modelVars['model'].eval()
+            res = utils.getErrClassification_mgpu(mdlParams, eval_set, modelVars)
+            val_loss, accuracy, sensitivity, specificity, conf_matrix, f1, auc, waccuracy, predictions, targets, _ = res
+                
+            class_names = ['NEV', 'BCC', 'SCC', 'MEL']
+                
+            # --- Precision 계산 (Confusion Matrix 활용) ---
+            # Precision = TP / (TP + FP)
+            precision = np.zeros(mdlParams['numClasses'])
+            for k in range(mdlParams['numClasses']):
+                tp = conf_matrix[k, k]
+                fp = np.sum(conf_matrix[:, k]) - tp
+                precision[k] = tp / (tp + fp) if (tp + fp) > 0 else 0
+                
+            # --- 평균 지표 계산 ---
+            mean_recall = np.mean(sensitivity)
+            mean_precision = np.mean(precision)
+            mean_sensitivity = np.mean(sensitivity)
+            mean_specificity = np.mean(specificity)
+
+            metrics_dict = {
+                "epoch": step,
+                "train_loss": train_loss.item(),
+                "val_loss": val_loss,
+                "accuracy": accuracy,
+                "f1_score": f1,
+                "mean_auc": np.mean(auc),
+                "mean_wacc": np.mean(waccuracy),
+                "mean_recall": mean_recall,
+                "mean_precision": mean_precision,
+                "mean_sensitivity": mean_sensitivity,
+                "mean_specificity": mean_specificity,
+                "learning_rate": modelVars['optimizer'].param_groups[0]['lr']
+            }
+
+            # 2. 클래스별 개별 지표 추가
+            for i, name in enumerate(class_names):
+                metrics_dict[f"label_metrics/{name}_auc"] = auc[i]
+                metrics_dict[f"label_metrics/{name}_recall"] = sensitivity[i]      # Recall 추가
+                metrics_dict[f"label_metrics/{name}_precision"] = precision[i]    # Precision 추가
+                metrics_dict[f"label_metrics/{name}_sens"] = sensitivity[i]
+                metrics_dict[f"label_metrics/{name}_spec"] = specificity[i]
+
+            # 3. Confusion Matrix 시각화
+            metrics_dict["confusion_matrix"] = wandb.plot.confusion_matrix(
+                probs=None,
+                y_true=np.argmax(targets, axis=1) if targets.ndim > 1 else targets,
+                preds=np.argmax(predictions, axis=1) if predictions.ndim > 1 else predictions,
+                class_names=class_names
+            )
+
+            # 4. PR Curve 추가 (Precision-Recall 곡선)
+            metrics_dict["pr_curve"] = wandb.plot.pr_curve(
+                np.argmax(targets, axis=1) if targets.ndim > 1 else targets, 
+                predictions, 
+                labels=class_names
+            )
+                
+            # ROC Curve
+            metrics_dict["roc_curve"] = wandb.plot.roc_curve(
+                np.argmax(targets, axis=1) if targets.ndim > 1 else targets, 
+                predictions, 
+                labels=class_names
+            )
+
+            # 모든 정보 로그 전송
+            wandb.log(metrics_dict)
+                
+            # 터미널 출력용 (현재 상황 확인)
+            print(f"Fold {cv} | Epoch {step} | Train Loss: {train_loss:.4f} | Acc: {accuracy:.4f} | Recall: {mean_recall:.4f} | Precision: {mean_precision:.4f}")
+
+            eval_metric = -np.mean(waccuracy)
+            if eval_metric < mdlParams['valBest']:
+                mdlParams['valBest'] = eval_metric
+                # 최적 모델 저장 로직 (생략 가능하나 유지는 권장)
+                state = {'epoch': step, 'state_dict': modelVars['model'].state_dict(), 'optimizer': modelVars['optimizer'].state_dict()}
+                torch.save(state, mdlParams['saveDir'] + '/checkpoint_best.pt')
+                print("🌟 Best Model Saved!")
                     
-                class_names = ['NEV', 'BCC', 'SCC', 'MEL']
-                    
-                # --- Precision 계산 (Confusion Matrix 활용) ---
-                # Precision = TP / (TP + FP)
-                precision = np.zeros(mdlParams['numClasses'])
-                for k in range(mdlParams['numClasses']):
-                    tp = conf_matrix[k, k]
-                    fp = np.sum(conf_matrix[:, k]) - tp
-                    precision[k] = tp / (tp + fp) if (tp + fp) > 0 else 0
-                    
-                # --- 평균 지표 계산 ---
-                mean_recall = np.mean(sensitivity)
-                mean_precision = np.mean(precision)
-                mean_sensitivity = np.mean(sensitivity)
-                mean_specificity = np.mean(specificity)
-
-                metrics_dict = {
-                    "epoch": step,
-                    "train_loss": train_loss.item(),
-                    "val_loss": val_loss,
-                    "accuracy": accuracy,
-                    "f1_score": f1,
-                    "mean_auc": np.mean(auc),
-                    "mean_wacc": np.mean(waccuracy),
-                    "mean_recall": mean_recall,
-                    "mean_precision": mean_precision,
-                    "mean_sensitivity": mean_sensitivity,
-                    "mean_specificity": mean_specificity,
-                    "learning_rate": modelVars['optimizer'].param_groups[0]['lr']
-                }
-
-                # 2. 클래스별 개별 지표 추가
-                for i, name in enumerate(class_names):
-                    metrics_dict[f"label_metrics/{name}_auc"] = auc[i]
-                    metrics_dict[f"label_metrics/{name}_recall"] = sensitivity[i]      # Recall 추가
-                    metrics_dict[f"label_metrics/{name}_precision"] = precision[i]    # Precision 추가
-                    metrics_dict[f"label_metrics/{name}_sens"] = sensitivity[i]
-                    metrics_dict[f"label_metrics/{name}_spec"] = specificity[i]
-
-                # 3. Confusion Matrix 시각화
-                metrics_dict["confusion_matrix"] = wandb.plot.confusion_matrix(
-                    probs=None,
-                    y_true=np.argmax(targets, axis=1) if targets.ndim > 1 else targets,
-                    preds=np.argmax(predictions, axis=1) if predictions.ndim > 1 else predictions,
-                    class_names=class_names
-                )
-
-                # 4. PR Curve 추가 (Precision-Recall 곡선)
-                metrics_dict["pr_curve"] = wandb.plot.pr_curve(
-                    np.argmax(targets, axis=1) if targets.ndim > 1 else targets, 
-                    predictions, 
-                    labels=class_names
-                )
-                    
-                # ROC Curve
-                metrics_dict["roc_curve"] = wandb.plot.roc_curve(
-                    np.argmax(targets, axis=1) if targets.ndim > 1 else targets, 
-                    predictions, 
-                    labels=class_names
-                )
-
-                # 모든 정보 로그 전송
-                wandb.log(metrics_dict)
-                    
-                # 터미널 출력용 (현재 상황 확인)
-                print(f"Fold {cv} | Epoch {step} | Train Loss: {train_loss:.4f} | Acc: {accuracy:.4f} | Recall: {mean_recall:.4f} | Precision: {mean_precision:.4f}")
-
-                eval_metric = -np.mean(waccuracy)
-                if eval_metric < mdlParams['valBest']:
-                    mdlParams['valBest'] = eval_metric
-                    # 최적 모델 저장 로직 (생략 가능하나 유지는 권장)
-                    state = {'epoch': step, 'state_dict': modelVars['model'].state_dict(), 'optimizer': modelVars['optimizer'].state_dict()}
-                    torch.save(state, mdlParams['saveDir'] + '/checkpoint_best.pt')
-                    print("🌟 Best Model Saved!")
-                        
-                # 시간 계산 및 터미널 출력
-                duration = time.time() - start_time
-                print(f"Fold {cv} | Epoch {step}/{mdlParams['training_steps']} | "
-                      f"Val Loss: {val_loss:.4f} | Acc: {accuracy:.4f} | WACC: {np.mean(waccuracy):.4f} | "
-                      f"Recall: {mean_recall:.4f} | Precision: {mean_precision:.4f}")
+            # 시간 계산 및 터미널 출력
+            duration = time.time() - start_time
+            print(f"Fold {cv} | Epoch {step}/{mdlParams['training_steps']} | "
+                    f"Val Loss: {val_loss:.4f} | Acc: {accuracy:.4f} | WACC: {np.mean(waccuracy):.4f} | "
+                    f"Recall: {mean_recall:.4f} | Precision: {mean_precision:.4f}")
 
         print(f"Fold {cv} Training Complete.")
         wandb.finish()
