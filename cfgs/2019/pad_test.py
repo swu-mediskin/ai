@@ -41,8 +41,8 @@ def init(mdlParams_):
     mdlParams['voting_scheme'] = 'average' # 멀티크롭 시 투표 방식
 
     ### 학습 하이퍼파라미터 ###
-    mdlParams['batchSize'] = 16 
-    mdlParams['learning_rate'] = 0.000015
+    mdlParams['batchSize'] = 32 
+    mdlParams['learning_rate'] = 0.0001
     mdlParams['lowerLRAfter'] = 20
     mdlParams['lowerLRat'] = 40
     mdlParams['LRstep'] = 5
