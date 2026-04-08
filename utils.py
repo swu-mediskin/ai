@@ -1,26 +1,15 @@
-import os
 import torch
-#import pandas as pd
-from skimage import io, transform
-import scipy
 import numpy as np
-#import matplotlib.pyplot as plt
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 import torch.nn.functional as F
 import torch.nn as nn
-from torch.autograd import Variable
-from torchvision import transforms, utils
 from torchvision.transforms import InterpolationMode
-from sklearn.metrics import confusion_matrix, auc, roc_curve, f1_score, classification_report
-from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.metrics import confusion_matrix, auc, roc_curve, f1_score
 import math
 from PIL import Image
 from torchvision.transforms import InterpolationMode
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.svm import SVC
 import types
-from auto_augment import AutoAugment, Cutout
+from auto_augment import AutoAugment
 
 # Define ISIC Dataset Class
 class ISICDataset(Dataset):

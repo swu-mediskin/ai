@@ -3,3 +3,4 @@ __pycache__/
 data/
 pc_cfgs/pad_cfg.py
 results/
+wandb/
