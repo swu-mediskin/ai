@@ -46,8 +46,7 @@ def init(mdlParams_):
     mdlParams['lowerLRAfter'] = 20
     mdlParams['lowerLRat'] = 40
     mdlParams['LRstep'] = 5
-    mdlParams['training_steps'] = 1
-    mdlParams['display_step'] = 10
+    mdlParams['epoch'] = 100
     
     # 데이터 증강 설정 (utils.py의 증강 로직 활성화)
     mdlParams['flip_lr_ud'] = True

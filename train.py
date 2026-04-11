@@ -38,8 +38,12 @@ if __name__ == '__main__':
 
     # 2. 디바이스 설정 (MPS 지원 추가)
     if 'mps' in sys.argv[3]:
-        device = torch.device("mps")
-        print("Using MPS (Apple Silicon GPU)")
+        if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+            device = torch.device("mps")
+            print("Using MPS (Apple Silicon GPU)")
+        else:
+            device = torch.device("cpu")
+            print("MPS not available. Falling back to CPU.")
     elif 'gpu' in sys.argv[3] or 'cuda' in sys.argv[3]:
         device = torch.device("cuda:0")
         print("Using CUDA")
@@ -62,7 +66,7 @@ if __name__ == '__main__':
     for cv in cv_set:
         wandb.init(
         project="mediskin", # 프로젝트 이름
-        name=f"image-baseline-fold{cv}", # 실험 이름
+        name=f"image-only-baseline-fold{cv}", # 실험 이름
         config=mdlParams # 하이퍼파라미터 기록
         )    
 
@@ -81,7 +85,7 @@ if __name__ == '__main__':
         modelVars = {'device': device}
         modelVars['model'] = models.getModel(mdlParams)()
         modelVars['softmax'] = nn.Softmax(dim=1)
-        modelVars['device'] = device
+
 
         # 모델 마지막 레이어 수정 (EfficientNet-B0 기준)
         if 'efficient' in mdlParams['model_type']:
@@ -95,8 +99,8 @@ if __name__ == '__main__':
         dataset_train = utils.ISICDataset(mdlParams, 'trainInd')
         dataset_val = utils.ISICDataset(mdlParams, 'valInd')
         
-        modelVars['dataloader_trainInd'] = DataLoader(dataset_train, batch_size=mdlParams['batchSize'], shuffle=True, num_workers=num_workers, pin_memory=True, drop_last=True)
-        modelVars['dataloader_valInd'] = DataLoader(dataset_val, batch_size=mdlParams['batchSize'], shuffle=False, num_workers=num_workers, pin_memory=True)
+        modelVars['dataloader_trainInd'] = DataLoader(dataset_train, batch_size=mdlParams['batchSize'], shuffle=True, num_workers=num_workers, pin_memory=False, drop_last=True)
+        modelVars['dataloader_valInd'] = DataLoader(dataset_val, batch_size=mdlParams['batchSize'], shuffle=False, num_workers=num_workers, pin_memory=False)
 
         # 6. 손실 함수 및 옵티마이저
         # 4개 클래스 단순 분류이므로 CrossEntropy 사용
@@ -107,10 +111,10 @@ if __name__ == '__main__':
         # 7. 학습 루프
         mdlParams['valBest'] = 1000
         start_time = time.time()
-        for step in range(1, mdlParams['training_steps'] + 1):
+        for epoch in range(1, mdlParams['epoch'] + 1):
             pbar = tqdm(enumerate(modelVars['dataloader_trainInd']), 
                 total=len(modelVars['dataloader_trainInd']), 
-                desc=f"Fold {cv} | Epoch {step}")
+                desc=f"Fold {cv} | Epoch {epoch}")
             modelVars['model'].train()
             
             for j, (inputs, labels, indices) in pbar:
@@ -126,7 +130,7 @@ if __name__ == '__main__':
                     pbar.set_postfix(loss=f"{train_loss.item():.4f}")
         
             # 스케줄러 업데이트
-            if step >= mdlParams['lowerLRat'] - mdlParams['lowerLRAfter']:
+            if epoch >= mdlParams['lowerLRat'] - mdlParams['lowerLRAfter']:
                 modelVars['scheduler'].step()
 
             # 평가 및 저장
@@ -151,7 +155,7 @@ if __name__ == '__main__':
             mean_specificity = np.mean(specificity)
 
             metrics_dict = {
-                "epoch": step,
+                "epoch": epoch,
                 "train_loss": train_loss.item(),
                 "val_loss": val_loss,
                 "accuracy": accuracy,
@@ -199,19 +203,19 @@ if __name__ == '__main__':
             wandb.log(metrics_dict)
                 
             # 터미널 출력용 (현재 상황 확인)
-            print(f"Fold {cv} | Epoch {step} | Train Loss: {train_loss:.4f} | Acc: {accuracy:.4f} | Recall: {mean_recall:.4f} | Precision: {mean_precision:.4f}")
+            print(f"Fold {cv} | Epoch {epoch} | Train Loss: {train_loss:.4f} | Acc: {accuracy:.4f} | Recall: {mean_recall:.4f} | Precision: {mean_precision:.4f}")
 
             eval_metric = -np.mean(waccuracy)
             if eval_metric < mdlParams['valBest']:
                 mdlParams['valBest'] = eval_metric
                 # 최적 모델 저장 로직 (생략 가능하나 유지는 권장)
-                state = {'epoch': step, 'state_dict': modelVars['model'].state_dict(), 'optimizer': modelVars['optimizer'].state_dict()}
+                state = {'epoch': epoch, 'state_dict': modelVars['model'].state_dict(), 'optimizer': modelVars['optimizer'].state_dict()}
                 torch.save(state, mdlParams['saveDir'] + '/checkpoint_best.pt')
                 print("🌟 Best Model Saved!")
                     
             # 시간 계산 및 터미널 출력
             duration = time.time() - start_time
-            print(f"Fold {cv} | Epoch {step}/{mdlParams['training_steps']} | "
+            print(f"Fold {cv} | Epoch {epoch}/{mdlParams['epoch']} | "
                     f"Val Loss: {val_loss:.4f} | Acc: {accuracy:.4f} | WACC: {np.mean(waccuracy):.4f} | "
                     f"Recall: {mean_recall:.4f} | Precision: {mean_precision:.4f}")
 
