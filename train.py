@@ -66,7 +66,7 @@ if __name__ == '__main__':
         )    
 
         print(f"\n--- Starting Fold {cv} ---")
-        mdlParams['saveDir'] = mdlParams['saveDirBase'] + '/CVSet' + str(cv)
+        mdlParams['saveDir'] = mdlParams['saveDirBase'] + '/image_baseline'
         if not os.path.isdir(mdlParams['saveDirBase']): os.makedirs(mdlParams['saveDirBase'], exist_ok=True)
         if not os.path.isdir(mdlParams['saveDir']): os.makedirs(mdlParams['saveDir'], exist_ok=True)
 
@@ -178,7 +178,7 @@ if __name__ == '__main__':
             if mdlParams['valBest'] < mean_recall:
                 mdlParams['valBest'] = mean_recall
                 state = {'epoch': epoch, 'state_dict': modelVars['model'].state_dict(), 'optimizer': modelVars['optimizer'].state_dict()}
-                torch.save(state, mdlParams['saveDir'] + '/checkpoint_best.pt')
+                torch.save(state, mdlParams['saveDir'] + '/best_fold' + str(cv) + '.pt')
                 print("🌟 Best Model Saved!")
 
 
