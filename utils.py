@@ -766,27 +766,45 @@ def getErrClassification_mgpu(mdlParams, indices, modelVars, exclude_class=None)
     if conf.shape[0] < num_classes:
         conf = np.ones([num_classes,num_classes])
     # Class weighted accuracy
-    wacc = conf.diagonal()/conf.sum(axis=1)    
-    # Sensitivity / Specificity
-    sensitivity = np.zeros([num_classes])
+    wacc = conf.diagonal()/conf.sum(axis=1) 
+
+    # Recall / Specificity / Precision / F1-Score
+    recall = np.zeros([num_classes])
     specificity = np.zeros([num_classes])
+    precision = np.zeros([num_classes])
+    f1 = np.zeros([num_classes])
+
     if num_classes > 2:
         for k in range(num_classes):
-                sensitivity[k] = conf[k,k]/(np.sum(conf[k,:]))
-                true_negative = np.delete(conf,[k],0)
-                true_negative = np.delete(true_negative,[k],1)
-                true_negative = np.sum(true_negative)
-                false_positive = np.delete(conf,[k],0)
-                false_positive = np.sum(false_positive[:,k])
-                specificity[k] = true_negative/(true_negative+false_positive)
-                # F1 score
-                f1 = f1_score(np.argmax(predictions,1),np.argmax(targets,1),average='weighted')                
+                tp = conf[k,k]
+                fn = np.sum(conf[k, :]) - tp
+                fp = np.sum(conf[:, k]) - tp
+                tn = np.sum(conf) - (tp + fn + fp)
+
+                recall[k] = tp / (tp + fn) if (tp + fn) > 0 else 0
+                precision[k] = tp / (tp + fp) if (tp + fp) > 0 else 0
+                specificity[k] = tn / (tn + fp) if (tn + fp) > 0 else 0
+                if (precision[k] + recall[k]) > 0:
+                    f1[k] = 2 * (precision[k] * recall[k]) / (precision[k] + recall[k])
+                else:
+                    f1[k] = 0
     else:
-        tn, fp, fn, tp = confusion_matrix(np.argmax(targets,1),np.argmax(predictions,1)).ravel()
-        sensitivity = tp/(tp+fn)
-        specificity = tn/(tn+fp)
-        # F1 score
-        f1 = f1_score(np.argmax(predictions,1),np.argmax(targets,1))
+        tn_val, fp_val, fn_val, tp_val = confusion_matrix(np.argmax(targets,1),np.argmax(predictions,1)).ravel()
+        
+        recall[0] = tn_val / (tn_val + fp_val) if (tn_val + fp_val) > 0 else 0 
+        recall[1] = tp_val / (tp_val + fn_val) if (tp_val + fn_val) > 0 else 0 
+        
+        precision[0] = tn_val / (tn_val + fn_val) if (tn_val + fn_val) > 0 else 0
+        precision[1] = tp_val / (tp_val + fp_val) if (tp_val + fp_val) > 0 else 0
+        
+        specificity[0] = tp_val / (tp_val + fn_val) if (tp_val + fn_val) > 0 else 0
+        specificity[1] = tn_val / (tn_val + fp_val) if (tn_val + fp_val) > 0 else 0
+
+        for i in range(2):
+            if (precision[i] + recall[i]) > 0:
+                f1[i] = 2 * (precision[i] * recall[i]) / (precision[i] + recall[i])
+            else:
+                f1[i] = 0
     # AUC
     fpr = {}
     tpr = {}
@@ -796,7 +814,7 @@ def getErrClassification_mgpu(mdlParams, indices, modelVars, exclude_class=None)
     for i in range(num_classes):
         fpr[i], tpr[i], _ = roc_curve(targets[:, i], predictions[:, i])
         roc_auc[i] = auc(fpr[i], tpr[i])
-    return np.mean(loss_all), acc, sensitivity, specificity, conf, f1, roc_auc, wacc, predictions, targets, predictions_mc 
+    return np.mean(loss_all), acc, recall, precision, specificity, conf, f1, roc_auc, wacc, predictions, targets, predictions_mc 
 
 
 def modify_densenet_avg_pool(model):

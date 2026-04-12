@@ -122,42 +122,34 @@ if __name__ == '__main__':
 
             modelVars['model'].eval()
             res = utils.getErrClassification_mgpu(mdlParams, eval_set, modelVars)
-            val_loss, accuracy, sensitivity, specificity, conf_matrix, f1, auc, waccuracy, predictions, targets, _ = res
+            val_loss, accuracy, recall, precision, specificity, conf_matrix, f1, auc, waccuracy, predictions, targets, _ = res
                 
             class_names = ['NEV', 'BCC', 'SCC', 'MEL']
 
-            precision = np.zeros(mdlParams['numClasses'])
-            for k in range(mdlParams['numClasses']):
-                tp = conf_matrix[k, k]
-                fp = np.sum(conf_matrix[:, k]) - tp
-                precision[k] = tp / (tp + fp) if (tp + fp) > 0 else 0
-                
-            mean_recall = np.mean(sensitivity)
+            mean_recall = np.mean(recall)
             mean_precision = np.mean(precision)
-            mean_sensitivity = np.mean(sensitivity)
             mean_specificity = np.mean(specificity)
+            mean_f1 = np.mean(f1)
 
             metrics_dict = {
                 "epoch": epoch,
                 "train_loss": train_loss.item(),
                 "val_loss": val_loss,
                 "accuracy": accuracy,
-                "f1_score": f1,
+                "mean_f1_score": mean_f1,
                 "mean_auc": np.mean(auc),
-                "mean_wacc": np.mean(waccuracy),
                 "mean_recall": mean_recall,
                 "mean_precision": mean_precision,
-                "mean_sensitivity": mean_sensitivity,
                 "mean_specificity": mean_specificity,
                 "learning_rate": modelVars['optimizer'].param_groups[0]['lr']
             }
 
             for i, name in enumerate(class_names):
                 metrics_dict[f"label_metrics/{name}_auc"] = auc[i]
-                metrics_dict[f"label_metrics/{name}_recall"] = sensitivity[i]      
-                metrics_dict[f"label_metrics/{name}_precision"] = precision[i]    
-                metrics_dict[f"label_metrics/{name}_sens"] = sensitivity[i]
-                metrics_dict[f"label_metrics/{name}_spec"] = specificity[i]
+                metrics_dict[f"label_metrics/{name}_recall"] = recall[i]      
+                metrics_dict[f"label_metrics/{name}_precision"] = precision[i]
+                metrics_dict[f"label_metrics/{name}_specificity"] = specificity[i]
+                metrics_dict[f"label_metrics/{name}_f1_score"] = f1[i]
 
             metrics_dict["confusion_matrix"] = wandb.plot.confusion_matrix(
                 probs=None,
