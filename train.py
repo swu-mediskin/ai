@@ -93,7 +93,9 @@ if __name__ == '__main__':
         modelVars['dataloader_trainInd'] = DataLoader(dataset_train, batch_size=mdlParams['batchSize'], shuffle=True, num_workers=num_workers, pin_memory=False, drop_last=True)
         modelVars['dataloader_valInd'] = DataLoader(dataset_val, batch_size=mdlParams['batchSize'], shuffle=False, num_workers=num_workers, pin_memory=False)
 
-        modelVars['criterion'] = nn.CrossEntropyLoss()
+
+        weights = mdlParams['class_weights'].to(device)
+        modelVars['criterion'] = nn.CrossEntropyLoss(weight=weights)
         modelVars['optimizer'] = optim.Adam(modelVars['model'].parameters(), lr=mdlParams['learning_rate'])
         modelVars['scheduler'] = lr_scheduler.StepLR(modelVars['optimizer'], step_size=mdlParams['lowerLRAfter'], gamma=1/mdlParams['LRstep'])
 
