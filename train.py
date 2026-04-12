@@ -97,7 +97,7 @@ if __name__ == '__main__':
         modelVars['optimizer'] = optim.Adam(modelVars['model'].parameters(), lr=mdlParams['learning_rate'])
         modelVars['scheduler'] = lr_scheduler.StepLR(modelVars['optimizer'], step_size=mdlParams['lowerLRAfter'], gamma=1/mdlParams['LRstep'])
 
-        mdlParams['valBest'] = 1000
+        mdlParams['valBest'] = 0.0
         start_time = time.time()
         for epoch in range(1, mdlParams['epoch'] + 1):
             pbar = tqdm(enumerate(modelVars['dataloader_trainInd']), 
@@ -174,17 +174,18 @@ if __name__ == '__main__':
                 
             print(f"Fold {cv} | Epoch {epoch} | Train Loss: {train_loss:.4f} | Acc: {accuracy:.4f} | Recall: {mean_recall:.4f} | Precision: {mean_precision:.4f}")
 
-            eval_metric = -np.mean(waccuracy)
-            if eval_metric < mdlParams['valBest']:
-                mdlParams['valBest'] = eval_metric
+            # Best Model 저장 로직
+            if mdlParams['valBest'] < mean_recall:
+                mdlParams['valBest'] = mean_recall
                 state = {'epoch': epoch, 'state_dict': modelVars['model'].state_dict(), 'optimizer': modelVars['optimizer'].state_dict()}
                 torch.save(state, mdlParams['saveDir'] + '/checkpoint_best.pt')
                 print("🌟 Best Model Saved!")
-                    
+
+
             duration = time.time() - start_time
             print(f"Fold {cv} | Epoch {epoch}/{mdlParams['epoch']} | "
-                    f"Val Loss: {val_loss:.4f} | Acc: {accuracy:.4f} | WACC: {np.mean(waccuracy):.4f} | "
-                    f"Recall: {mean_recall:.4f} | Precision: {mean_precision:.4f}")
+                    f"Val Loss: {val_loss:.4f} | Acc: {accuracy:.4f} | F1-score: {mean_f1:.4f} | "
+                    f"Recall: {mean_recall:.4f} | Precision: {mean_precision:.4f} | Specificity: {mean_specificity:.4f} ")
 
         print(f"Fold {cv} Training Complete.")
         wandb.finish()
