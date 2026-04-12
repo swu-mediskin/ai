@@ -122,7 +122,7 @@ if __name__ == '__main__':
 
             modelVars['model'].eval()
             res = utils.getErrClassification_mgpu(mdlParams, eval_set, modelVars)
-            val_loss, accuracy, recall, precision, specificity, conf_matrix, f1, auc, waccuracy, predictions, targets, _ = res
+            val_loss, accuracy, recall, precision, specificity, conf_matrix, f1, auc, predictions, targets, _ = res
                 
             class_names = ['NEV', 'BCC', 'SCC', 'MEL']
 

@@ -766,7 +766,7 @@ def getErrClassification_mgpu(mdlParams, indices, modelVars, exclude_class=None)
     if conf.shape[0] < num_classes:
         conf = np.ones([num_classes,num_classes])
     # Class weighted accuracy
-    wacc = conf.diagonal()/conf.sum(axis=1) 
+    # wacc = conf.diagonal()/conf.sum(axis=1) 
 
     # Recall / Specificity / Precision / F1-Score
     recall = np.zeros([num_classes])
@@ -814,7 +814,7 @@ def getErrClassification_mgpu(mdlParams, indices, modelVars, exclude_class=None)
     for i in range(num_classes):
         fpr[i], tpr[i], _ = roc_curve(targets[:, i], predictions[:, i])
         roc_auc[i] = auc(fpr[i], tpr[i])
-    return np.mean(loss_all), acc, recall, precision, specificity, conf, f1, roc_auc, wacc, predictions, targets, predictions_mc 
+    return np.mean(loss_all), acc, recall, precision, specificity, conf, f1, roc_auc, predictions, targets, predictions_mc 
 
 
 def modify_densenet_avg_pool(model):
