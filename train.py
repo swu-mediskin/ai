@@ -49,15 +49,18 @@ if __name__ == '__main__':
         print("Using CPU")
 
     if len(sys.argv) > 4:
-        cv_set = [int(s) for s in re.findall(r'\d+', sys.argv[4])]
-    else:
-        cv_set = range(mdlParams['numCV'])
+        mdlParams['cv_subset'] = [int(s) for s in re.findall(r'\d+',sys.argv[4])]
+        print("Training validation sets",mdlParams['cv_subset'])
 
     prevFile = Path(mdlParams['saveDirBase'] + '/CV.pkl')
     allData = pickle.load(open(prevFile, 'rb')) if prevFile.exists() else {
         k: {} for k in ['f1Best', 'sensBest', 'specBest', 'accBest', 'waccBest', 'aucBest', 'convergeTime', 'bestPred', 'targets']
     }
 
+    if mdlParams.get('cv_subset',None) is not None:
+        cv_set = mdlParams['cv_subset']
+    else:
+        cv_set = range(mdlParams['numCV'])
     for cv in cv_set:
         wandb.init(
         project="mediskin", 
