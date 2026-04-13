@@ -12,8 +12,8 @@ from torchvision.transforms import InterpolationMode
 import types
 from auto_augment import AutoAugment
 
-# Define ISIC Dataset Class
-class ISICDataset(Dataset):
+# Define PAD Dataset Class
+class PADDataset(Dataset):
     """ISIC dataset."""
 
     def __init__(self, mdlParams, indSet):
