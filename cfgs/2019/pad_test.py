@@ -28,8 +28,7 @@ def init(mdlParams_):
     mdlParams['balance_classes'] = 0       
     mdlParams['subtract_set_mean'] = False 
     mdlParams['setMean'] = np.array([0.485, 0.456, 0.406]) 
-    mdlParams['setStd'] = np.array([0.229, 0.224, 0.225]) 
-    mdlParams['trainSetState'] = 'train'   
+    mdlParams['setStd'] = np.array([0.229, 0.224, 0.225])    
     mdlParams['numGPUs'] = [0]
     
     
