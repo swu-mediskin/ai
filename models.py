@@ -153,8 +153,8 @@ def modify_meta(mdlParams,model):
             cnn_features = self.extract_features(x)
             # Pooling and final linear layer
             cnn_features = F.adaptive_avg_pool2d(cnn_features, 1).squeeze(-1).squeeze(-1)
-            if self._dropout:
-                cnn_features = F.dropout(cnn_features, p=self._dropout, training=self.training)
+            # if self._dropout:
+            #     cnn_features = F.dropout(cnn_features, p=self._dropout, training=self.training)
         elif 'wsl' in mdlParams['model_type']:
             cnn_features = self.conv1(x)
             cnn_features = self.bn1(cnn_features)

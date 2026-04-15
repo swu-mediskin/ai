@@ -62,12 +62,12 @@ if __name__ == '__main__':
     for cv in cv_set:
         wandb.init(
         project="mediskin", 
-        name=f"image-only-baseline-fold{cv}", 
+        name=f"meta-doc-fold{cv}", 
         config=mdlParams 
         )    
 
         print(f"\n--- Starting Fold {cv} ---")
-        mdlParams['saveDir'] = mdlParams['saveDirBase'] + '/image_baseline'
+        mdlParams['saveDir'] = mdlParams['saveDirBase'] + '/meta_doc'
         if not os.path.isdir(mdlParams['saveDirBase']): os.makedirs(mdlParams['saveDirBase'], exist_ok=True)
         if not os.path.isdir(mdlParams['saveDir']): os.makedirs(mdlParams['saveDir'], exist_ok=True)
 
@@ -152,7 +152,8 @@ if __name__ == '__main__':
                 for param in modelVars['model']._fc.parameters():
                     param.is_cnn_param = False                              
             # modify model
-            modelVars['model'] = models.modify_meta(mdlParams,modelVars['model'])  
+            modelVars['model'] = models.modify_meta(mdlParams,modelVars['model']) 
+            modelVars['model'] = modelVars['model'].to(device) 
             # Mark new parameters
             for param in modelVars['model'].parameters():
                 if not hasattr(param, 'is_cnn_param'):
@@ -199,10 +200,8 @@ if __name__ == '__main__':
                 labels = labels.to(device)
                 
                 modelVars['optimizer'].zero_grad()
-                if isinstance(inputs, (list, tuple)):
-                    outputs = modelVars['model'](*inputs) 
-                else:
-                    outputs = modelVars['model'](inputs)
+                outputs = modelVars['model'](inputs)
+
                 loss = modelVars['criterion'](outputs, labels)
                 loss.backward()
                 modelVars['optimizer'].step()
