@@ -1,5 +1,6 @@
 ﻿import os
 import csv
+import torch
 import numpy as np
 from sklearn.model_selection import StratifiedGroupKFold
 
@@ -27,8 +28,7 @@ def init(mdlParams_):
     mdlParams['balance_classes'] = 0       
     mdlParams['subtract_set_mean'] = False 
     mdlParams['setMean'] = np.array([0.485, 0.456, 0.406]) 
-    mdlParams['setStd'] = np.array([0.229, 0.224, 0.225]) 
-    mdlParams['trainSetState'] = 'train'   
+    mdlParams['setStd'] = np.array([0.229, 0.224, 0.225])    
     mdlParams['numGPUs'] = [0]
     
     
@@ -104,5 +104,24 @@ def init(mdlParams_):
     
     mdlParams['orderedCrop'] = False
     mdlParams['multiCropEval'] = 0
+
+    unique, counts = np.unique(class_indices, return_counts=True)
+    class_counts = dict(zip(unique, counts))
+    
+    print("\n--- 클래스별 데이터 분포 ---")
+    for cls, count in class_counts.items():
+        inv_diag_map = {v: k for k, v in diag_map.items()}
+        print(f"{inv_diag_map[cls]}: {count}장")
+
+    total_samples = len(class_indices)
+    num_classes = mdlParams['numClasses']
+    
+    weights = [total_samples / (num_classes * class_counts[i]) if i in class_counts else 0 for i in range(num_classes)]
+    
+    mdlParams['class_weights'] = torch.FloatTensor(weights)
+    
+    print("\n--- 계산된 클래스 가중치 ---")
+    print(weights)
+
     
     return mdlParams
