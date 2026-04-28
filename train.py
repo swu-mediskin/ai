@@ -36,13 +36,11 @@ if __name__ == '__main__':
     mdlParams['trainSetState'] = 'train'
     mdlParams['saveDirBase'] = mdlParams['saveDir'] + sys.argv[2]
 
+    # gpu 환경 설정
     if 'mps' in sys.argv[3]:
         if torch.backends.mps.is_available() and torch.backends.mps.is_built():
             device = torch.device("mps")
             print("Using MPS (Apple Silicon GPU)")
-        else:
-            device = torch.device("cpu")
-            print("MPS not available. Falling back to CPU.")
     elif 'gpu' in sys.argv[3] or 'cuda' in sys.argv[3]:
         device = torch.device("cuda:0")
         print("Using CUDA")
@@ -62,12 +60,12 @@ if __name__ == '__main__':
     for cv in cv_set:
         wandb.init(
         project="mediskin", 
-        name=f"meta-doc-fold{cv}", 
+        name=f"meta_all_real_norm_fold{cv}", 
         config=mdlParams 
         )    
 
         print(f"\n--- Starting Fold {cv} ---")
-        mdlParams['saveDir'] = mdlParams['saveDirBase'] + '/meta_doc'
+        mdlParams['saveDir'] = mdlParams['saveDirBase'] + '/meta_all_real_norm'
         if not os.path.isdir(mdlParams['saveDirBase']): os.makedirs(mdlParams['saveDirBase'], exist_ok=True)
         if not os.path.isdir(mdlParams['saveDir']): os.makedirs(mdlParams['saveDir'], exist_ok=True)
 
