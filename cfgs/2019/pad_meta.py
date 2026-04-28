@@ -103,7 +103,8 @@ def init(mdlParams_):
                     
                     # 1. 나이 (Age): 단순 수치
                     age = float(row.get('age', 0))
-                    feature_vector.append(np.array([age]))
+                    normalized_age = age / 100.0
+                    feature_vector.append(np.array([normalized_age]))
 
                     # 2. 성별 (Gender): One-hot (2차원)
                     gender_vec = np.zeros(2)
