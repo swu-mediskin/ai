@@ -4,3 +4,6 @@ data/
 pc_cfgs/pad_cfg.py
 results/
 wandb/
+*.png
+*.jpg
+*.jpeg
