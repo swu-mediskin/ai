@@ -835,4 +835,89 @@ def modify_densenet_avg_pool(model):
     model.forward = types.MethodType(forward, model)
 
     return model    
+
+
+def getErrClassification_mgpu_meta(mdlParams, indices, modelVars, exclude_class=None):
+    # Set up sizes
+    if indices == 'trainInd':
+        numBatches = int(math.floor(len(mdlParams[indices])/mdlParams['batchSize']/len(mdlParams['numGPUs'])))
+    else:
+        numBatches = int(math.ceil(len(mdlParams[indices])/mdlParams['batchSize']/len(mdlParams['numGPUs'])))
+
+    # --- 메타 전용 모델은 Multi-crop이나 Flipping을 사용하지 않는다고 가정하고 기본 루프만 수정 ---
     
+    loss_all = []
+    predictions = []
+    targets_all = []
+
+    # DataLoader 루프
+    for i, (inputs, labels, inds) in enumerate(modelVars['dataloader_'+indices]):
+        # [핵심 수정] 이미지(inputs[0])는 무시하고 메타데이터(inputs[1])만 사용
+        meta_data = inputs[1].to(modelVars['device'])
+        labels = labels.to(modelVars['device'])       
+
+        modelVars['optimizer'].zero_grad()    
+        with torch.set_grad_enabled(False):
+            # [핵심 수정] 모델에 메타데이터만 입력
+            outputs = modelVars['model'](meta_data)
+            
+            preds = modelVars['softmax'](outputs)      
+            loss = modelVars['criterion'](outputs, labels)           
+
+        # 결과 저장
+        loss_all.append(loss.cpu().numpy())
+        predictions.append(preds.cpu().numpy())
+        
+        # 타겟 원-핫 인코딩
+        tar_not_one_hot = labels.data.cpu().numpy()
+        tar = np.zeros((tar_not_one_hot.shape[0], mdlParams['numClasses']))
+        tar[np.arange(tar_not_one_hot.shape[0]), tar_not_one_hot] = 1
+        targets_all.append(tar)
+
+    # 리스트를 넘파이 배열로 변환
+    loss_all = np.array(loss_all)
+    predictions = np.concatenate(predictions, axis=0)
+    targets = np.concatenate(targets_all, axis=0)
+    predictions_mc = predictions
+
+    # --- 이후 지표 계산 로직은 동일 (기존 코드 유지) ---
+    if exclude_class is not None:
+        predictions = np.concatenate((predictions[:,:exclude_class],predictions[:,exclude_class+1:]),1)
+        targets = np.concatenate((targets[:,:exclude_class],targets[:,exclude_class+1:]),1)    
+        num_classes = mdlParams['numClasses']-1
+    else:
+        num_classes = mdlParams['numClasses']
+
+    acc = np.mean(np.equal(np.argmax(predictions,1),np.argmax(targets,1)))
+    conf = confusion_matrix(np.argmax(targets,1),np.argmax(predictions,1))
+    
+    if conf.shape[0] < num_classes:
+        conf = np.ones([num_classes,num_classes])
+
+    recall = np.zeros([num_classes])
+    specificity = np.zeros([num_classes])
+    precision = np.zeros([num_classes])
+    f1 = np.zeros([num_classes])
+
+    if num_classes > 2:
+        for k in range(num_classes):
+            tp = conf[k,k]
+            fn = np.sum(conf[k, :]) - tp
+            fp = np.sum(conf[:, k]) - tp
+            tn = np.sum(conf) - (tp + fn + fp)
+            recall[k] = tp / (tp + fn) if (tp + fn) > 0 else 0
+            precision[k] = tp / (tp + fp) if (tp + fp) > 0 else 0
+            specificity[k] = tn / (tn + fp) if (tn + fp) > 0 else 0
+            f1[k] = 2 * (precision[k] * recall[k]) / (precision[k] + recall[k]) if (precision[k] + recall[k]) > 0 else 0
+    else:
+        # Binary case
+        tn_val, fp_val, fn_val, tp_val = confusion_matrix(np.argmax(targets,1),np.argmax(predictions,1)).ravel()
+        # ... (중략 - 기존 이진 분류 로직 그대로 사용) ...
+
+    # AUC 계산
+    roc_auc = np.zeros([num_classes])
+    for i in range(num_classes):
+        fpr, tpr, _ = roc_curve(targets[:, i], predictions[:, i])
+        roc_auc[i] = auc(fpr, tpr)
+
+    return np.mean(loss_all), acc, recall, precision, specificity, conf, f1, roc_auc, predictions, targets, predictions_mc

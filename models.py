@@ -248,3 +248,32 @@ def getModel(config):
   else:
       raise ValueError('Name of model unknown %s' % config['model_name'] )
   return model
+
+import torch.nn as nn
+
+class MetaOnlyModel(nn.Module):
+    def __init__(self, mdlParams):
+        super(MetaOnlyModel, self).__init__()
+        # 메타데이터 피처 개수 (70차원 등)
+        input_dim = mdlParams['meta_array'].shape[1] 
+        
+        layers = []
+        curr_dim = input_dim
+        
+        # mdlParams['fc_layers_before'] 설정을 사용하여 층을 쌓음
+        # 예: [128, 64] 라면 Linear(70, 128) -> Linear(128, 64)
+        for h_dim in mdlParams['fc_layers_before']:
+            layers.append(nn.Linear(curr_dim, h_dim))
+            layers.append(nn.BatchNorm1d(h_dim))
+            layers.append(nn.ReLU())
+            layers.append(nn.Dropout(p=mdlParams['dropout_meta']))
+            curr_dim = h_dim
+            
+        self.backbone = nn.Sequential(*layers)
+        self.classifier = nn.Linear(curr_dim, mdlParams['numClasses'])
+
+    def forward(self, x):
+        # x는 메타데이터 텐서
+        # 만약 inputs[1](meta)만 바로 넘긴다면 x를 그대로 쓰면 됨
+        x = self.backbone(x)
+        return self.classifier(x)
