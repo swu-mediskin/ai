@@ -3,7 +3,6 @@ import csv
 import torch
 import numpy as np
 from sklearn.model_selection import StratifiedGroupKFold
-# from torchvision import transforms # 이미지 안 쓰면 이것도 필요 없음
 
 def init(mdlParams_):
     mdlParams = {}
@@ -25,7 +24,7 @@ def init(mdlParams_):
     mdlParams['same_sized_crops'] = True
     mdlParams['subtract_set_mean'] = False
     mdlParams['crop_size'] = [224, 224]
-    mdlParams['drop_augment'] = 0.1  # 멀티모달과 동일
+    mdlParams['drop_augment'] = 0.1  
     mdlParams['multiCropEval'] = 0
     mdlParams['same_sized_crops'] = True
     mdlParams['subtract_set_mean'] = False
@@ -65,15 +64,13 @@ def init(mdlParams_):
     mdlParams['peak_at_testerr'] = False
     mdlParams['voting_scheme'] = 'average'
 
-    # ✅ 학습 하이퍼파라미터 (멀티모달 실험과 완전히 동일하게 맞춤)
-    mdlParams['batchSize'] = 32        # 64 → 32
+    mdlParams['batchSize'] = 32        
     mdlParams['learning_rate'] = 0.0001
     mdlParams['lowerLRAfter'] = 20
     mdlParams['lowerLRat'] = 40
     mdlParams['LRstep'] = 5
-    mdlParams['epoch'] = 500           # 500 → 100
+    mdlParams['epoch'] = 100
 
-    # ✅ 데이터 증강 설정 (멀티모달 실험과 완전히 동일하게 맞춤)
     mdlParams['flip_lr_ud'] = True
     mdlParams['full_rot'] = 180
     mdlParams['scale'] = (0.8, 1.2)
