@@ -56,12 +56,12 @@ if __name__ == '__main__':
     for cv in cv_set:
         wandb.init(
         project="mediskin", 
-        name=f"img_only_aug_fold{cv}", 
+        name=f"img_only_aug_b4_fold{cv}", 
         config=mdlParams 
         )    
 
         print(f"\n--- Starting Fold {cv} ---")
-        mdlParams['saveDir'] = mdlParams['saveDirBase'] + '/img_only_aug'
+        mdlParams['saveDir'] = mdlParams['saveDirBase'] + '/img_only_aug_b4'
         if not os.path.isdir(mdlParams['saveDirBase']): os.makedirs(mdlParams['saveDirBase'], exist_ok=True)
         if not os.path.isdir(mdlParams['saveDir']): os.makedirs(mdlParams['saveDir'], exist_ok=True)
 
@@ -100,7 +100,7 @@ if __name__ == '__main__':
             if os.path.isfile(chkPath):
                 print(f"✅ Restoring best lesion-trained CNN from: {chkPath}")
                 
-                state = torch.load(chkPath, map_location=device)
+                state = torch.load(chkPath, map_location=device, weights_only=False)
                 
                 curr_model_dict = modelVars['model'].state_dict()
             
