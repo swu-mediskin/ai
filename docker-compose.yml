@@ -1,0 +1,14 @@
+services:
+  mediskin:
+    image: jkjade/mediskin:latest
+    container_name: mediskin-server
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./results:/app/results
+      - ./data:/app/data
+    environment:
+      - MODEL_WEIGHTS_PATH=/app/results/2019.pad_multi_all_real_aug/multi_all_real_aug/best_fold0.pt
+      - TRAIN_CSV_PATH=/app/data/folds/fold0/train.csv
+      - DATA_PATH=/app/data
+    restart: always
