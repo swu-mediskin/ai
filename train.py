@@ -56,12 +56,12 @@ if __name__ == '__main__':
     for cv in cv_set:
         wandb.init(
         project="mediskin", 
-        name=f"meta_all_real_norm_fold{cv}", 
+        name=f"img_only_aug_fold{cv}", 
         config=mdlParams 
         )    
 
         print(f"\n--- Starting Fold {cv} ---")
-        mdlParams['saveDir'] = mdlParams['saveDirBase'] + '/meta_all_real_norm'
+        mdlParams['saveDir'] = mdlParams['saveDirBase'] + '/img_only_aug'
         if not os.path.isdir(mdlParams['saveDirBase']): os.makedirs(mdlParams['saveDirBase'], exist_ok=True)
         if not os.path.isdir(mdlParams['saveDir']): os.makedirs(mdlParams['saveDir'], exist_ok=True)
 
@@ -183,6 +183,9 @@ if __name__ == '__main__':
                 total=len(modelVars['dataloader_trainInd']), 
                 desc=f"Fold {cv} | Epoch {epoch}")
             modelVars['model'].train()
+
+            class_train_loss_sum = torch.zeros(mdlParams['numClasses']).to(device)
+            class_train_loss_count = torch.zeros(mdlParams['numClasses']).to(device)
             
             for j, (inputs, labels, indices) in pbar:
                 if mdlParams.get('meta_features',None) is not None: 
@@ -199,6 +202,14 @@ if __name__ == '__main__':
                 loss = modelVars['criterion'](outputs, labels)
                 loss.backward()
                 modelVars['optimizer'].step()
+
+                with torch.no_grad():
+                    per_sample_loss = nn.CrossEntropyLoss(reduction='none')(outputs, labels)
+                    for c in range(mdlParams['numClasses']):
+                        mask = (labels == c)
+                        if mask.sum() > 0:
+                            class_train_loss_sum[c] += per_sample_loss[mask].sum()
+                            class_train_loss_count[c] += mask.sum()
                 
                 pbar.set_postfix(loss=f"{loss.item():.4f}")
         
@@ -207,7 +218,7 @@ if __name__ == '__main__':
 
             modelVars['model'].eval()
             res = utils.getErrClassification_mgpu(mdlParams, eval_set, modelVars)
-            val_loss, accuracy, recall, precision, specificity, conf_matrix, f1, auc, predictions, targets, _ = res
+            val_loss, accuracy, recall, precision, specificity, conf_matrix, f1, auc, predictions, targets, _, class_val_loss = res
                 
             class_names = ['NEV', 'BCC', 'SCC', 'MEL']
 
@@ -229,7 +240,11 @@ if __name__ == '__main__':
                 "learning_rate": modelVars['optimizer'].param_groups[0]['lr']
             }
 
+            class_train_losses = class_train_loss_sum / (class_train_loss_count + 1e-8)
+
             for i, name in enumerate(class_names):
+                metrics_dict[f"label_metrics/{name}_val_loss"] = class_val_loss[i]
+                metrics_dict[f"label_metrics/{name}_train_loss"] = class_train_losses[i].item()
                 metrics_dict[f"label_metrics/{name}_auc"] = auc[i]
                 metrics_dict[f"label_metrics/{name}_recall"] = recall[i]      
                 metrics_dict[f"label_metrics/{name}_precision"] = precision[i]

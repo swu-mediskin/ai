@@ -814,7 +814,26 @@ def getErrClassification_mgpu(mdlParams, indices, modelVars, exclude_class=None)
     for i in range(num_classes):
         fpr[i], tpr[i], _ = roc_curve(targets[:, i], predictions[:, i])
         roc_auc[i] = auc(fpr[i], tpr[i])
-    return np.mean(loss_all), acc, recall, precision, specificity, conf, f1, roc_auc, predictions, targets, predictions_mc 
+
+    # 클래스별 val loss 계산
+    class_val_loss = np.zeros(num_classes)
+    criterion_none = nn.CrossEntropyLoss(reduction='none')
+
+    # targets에서 클래스 인덱스 추출
+    target_indices = np.argmax(targets, 1)
+
+    # predictions으로 per-sample loss 계산
+    pred_tensor = torch.tensor(predictions)
+    target_tensor = torch.tensor(target_indices).long()
+    per_sample_loss = criterion_none(pred_tensor, target_tensor).numpy()
+
+    for c in range(num_classes):
+        mask = (target_indices == c)
+        if mask.sum() > 0:
+            class_val_loss[c] = per_sample_loss[mask].mean()
+
+    return np.mean(loss_all), acc, recall, precision, specificity, conf, f1, roc_auc, predictions, targets, predictions_mc, class_val_loss
+    #return np.mean(loss_all), acc, recall, precision, specificity, conf, f1, roc_auc, predictions, targets, predictions_mc 
 
 
 def modify_densenet_avg_pool(model):
