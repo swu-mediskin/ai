@@ -54,12 +54,12 @@ if __name__ == '__main__':
     for cv in cv_set:
         wandb.init(
             project="mediskin", 
-            name=f"meta_only_all_real_same_fold{cv}", 
+            name=f"meta_only_all_real_max_fold{cv}", 
             config=mdlParams 
         )    
 
         print(f"\n--- Starting Meta-Only Fold {cv} ---")
-        mdlParams['saveDir'] = mdlParams['saveDirBase'] + '/meta_only_same_results'
+        mdlParams['saveDir'] = mdlParams['saveDirBase'] + '/meta_only_all_real_max_results'
         os.makedirs(mdlParams['saveDir'], exist_ok=True)
 
         importlib.reload(models)
@@ -103,26 +103,34 @@ if __name__ == '__main__':
             
             modelVars['model'].train()
             
+            class_train_loss_sum = torch.zeros(mdlParams['numClasses']).to(device)
+            class_train_loss_count = torch.zeros(mdlParams['numClasses']).to(device)
+
             for j, (inputs, labels, indices) in pbar:
                 meta_data = inputs[1].to(device)
                 labels = labels.to(device)
                 
                 modelVars['optimizer'].zero_grad()
                 outputs = modelVars['model'](meta_data)
-
                 loss = modelVars['criterion'](outputs, labels)
                 loss.backward()
                 modelVars['optimizer'].step()
+
+                # 클래스별 train loss
+                with torch.no_grad():
+                    per_sample_loss = nn.CrossEntropyLoss(reduction='none')(outputs, labels)
+                    for c in range(mdlParams['numClasses']):
+                        mask = (labels == c)
+                        if mask.sum() > 0:
+                            class_train_loss_sum[c] += per_sample_loss[mask].sum()
+                            class_train_loss_count[c] += mask.sum()
                 
                 pbar.set_postfix(loss=f"{loss.item():.4f}")
-        
-            if epoch >= mdlParams['lowerLRat'] - mdlParams['lowerLRAfter']:
-                modelVars['scheduler'].step()
 
             # 검증 단계
             modelVars['model'].eval()
             res = utils.getErrClassification_mgpu_meta(mdlParams, eval_set, modelVars)
-            val_loss, accuracy, recall, precision, specificity, conf_matrix, f1, auc, predictions, targets, _ = res
+            val_loss, accuracy, recall, precision, specificity, conf_matrix, f1, auc, predictions, targets, _, class_val_loss = res
                 
             class_names = ['NEV', 'BCC', 'SCC', 'MEL']
 
@@ -144,7 +152,10 @@ if __name__ == '__main__':
                 "learning_rate": modelVars['optimizer'].param_groups[0]['lr']
             }
 
+            class_train_losses = class_train_loss_sum / (class_train_loss_count + 1e-8)
             for i, name in enumerate(class_names):
+                metrics_dict[f"label_metrics/{name}_train_loss"] = class_train_losses[i].item()
+                metrics_dict[f"label_metrics/{name}_val_loss"] = class_val_loss[i]
                 metrics_dict[f"label_metrics/{name}_auc"] = auc[i]
                 metrics_dict[f"label_metrics/{name}_recall"] = recall[i]      
                 metrics_dict[f"label_metrics/{name}_precision"] = precision[i]
