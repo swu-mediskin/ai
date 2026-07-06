@@ -54,12 +54,12 @@ if __name__ == '__main__':
     for cv in cv_set:
         wandb.init(
             project="mediskin", 
-            name=f"meta_only_all_real_max_fold{cv}", 
+            name=f"meta_only_analyzed_05_{cv}", 
             config=mdlParams 
         )    
 
         print(f"\n--- Starting Meta-Only Fold {cv} ---")
-        mdlParams['saveDir'] = mdlParams['saveDirBase'] + '/meta_only_all_real_max_results'
+        mdlParams['saveDir'] = mdlParams['saveDirBase'] + '/meta_only_analyzed_05_results'
         os.makedirs(mdlParams['saveDir'], exist_ok=True)
 
         importlib.reload(models)
