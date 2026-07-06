@@ -54,10 +54,7 @@ img_indices = np.arange(len(df))
 # ============================================================
 sgkf = StratifiedGroupKFold(n_splits=NUM_FOLDS, shuffle=True, random_state=SEED)
 
-fold = 0
-train_idx, val_idx = next(iter(sgkf.split(img_indices, class_indices, groups=patient_ids)))
-
-if True:
+for fold, (train_idx, val_idx) in enumerate(sgkf.split(img_indices, class_indices, groups=patient_ids)):
     print(f"\n{'='*50}")
     print(f"Fold {fold} 처리 중... (Train: {len(train_idx)}장 | Val: {len(val_idx)}장)")
     print(f"{'='*50}")
@@ -141,10 +138,5 @@ if True:
     print(val_df['diagnostic'].value_counts().to_string())
     print(f"\n  저장 완료 → {fold_dir}")
 
-print("\nFold 0 처리 완료!")
-print(f"결과 구조:")
-print(f"data/folds/")
-print(f"└── fold0/")
-print(f"    ├── imgs/          ← 원본 + 증강 이미지")
-print(f"    ├── train.csv      ← 증강 포함 train 메타데이터")
-print(f"    └── val.csv        ← 원본만 val 메타데이터")
+print(f"\n전체 {NUM_FOLDS}개 Fold 처리 완료!")
+print(f"결과 구조: data/folds/fold{{0~{NUM_FOLDS-1}}}/imgs, train.csv, val.csv")
