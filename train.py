@@ -55,13 +55,13 @@ if __name__ == '__main__':
         cv_set = range(mdlParams['numCV'])
     for cv in cv_set:
         wandb.init(
-        project="mediskin", 
-        name=f"multi_all_real_aug_2_fold{cv}", 
+        project="mediskin",
+        name= mdlParams['mdlName'] + str(cv), 
         config=mdlParams 
         )    
 
         print(f"\n--- Starting Fold {cv} ---")
-        mdlParams['saveDir'] = mdlParams['saveDirBase'] + '/multi_all_real_aug_2'
+        mdlParams['saveDir'] = mdlParams['saveDirBase'] + '/' + mdlParams['mdlName']
         if not os.path.isdir(mdlParams['saveDirBase']): os.makedirs(mdlParams['saveDirBase'], exist_ok=True)
         if not os.path.isdir(mdlParams['saveDir']): os.makedirs(mdlParams['saveDir'], exist_ok=True)
 
