@@ -10,7 +10,7 @@ from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from PIL import Image
 from torchvision import transforms
 import models
-from inference import build_meta_vector  # 추가
+from inference import build_meta_vector, build_text_tokens  # 추가
 
 app = FastAPI(title="Mediskin AI API")
 
@@ -30,14 +30,21 @@ elif torch.cuda.is_available():
 else:
     device = torch.device("cpu")
 
-model = models.getModel(mdlParams)()
-if 'efficient' in mdlParams['model_type']:
-    num_ftrs = model._fc.in_features
-    model._fc = nn.Linear(num_ftrs, mdlParams['numClasses'])
-if mdlParams.get('meta_features', None) is not None:
-    model = models.modify_meta(mdlParams, model)
+if mdlParams['model_type'] == 'biomedclip':
+    model = models.BiomedCLIPMultiModal(mdlParams)
+    tokenizer = models.get_biomedclip_tokenizer()
+else:
+    model = models.getModel(mdlParams)()
+    if 'efficient' in mdlParams['model_type']:
+        num_ftrs = model._fc.in_features
+        model._fc = nn.Linear(num_ftrs, mdlParams['numClasses'])
+    if mdlParams.get('meta_features', None) is not None:
+        model = models.modify_meta(mdlParams, model)
 
-chkPath = os.environ.get('MODEL_WEIGHTS_PATH', 'results/2019.pad_multi_all_real_aug/multi_all_real_aug/best_fold0.pt')
+default_chkpt = ('results/2019.pad_biomedclip/multi_all_real_aug_2/best_fold0.pt'
+                  if mdlParams['model_type'] == 'biomedclip'
+                  else 'results/2019.pad_multi_all_real_aug/multi_all_real_aug/best_fold0.pt')
+chkPath = os.environ.get('MODEL_WEIGHTS_PATH', default_chkpt)
 state = torch.load(chkPath, map_location=device, weights_only=False)
 model.load_state_dict(state['state_dict'])
 model.to(device)
@@ -49,8 +56,11 @@ preprocess = transforms.Compose([
     transforms.Normalize(mean=mdlParams['setMean'], std=mdlParams['setStd'])
 ])
 
-train_indices = mdlParams['trainIndCV'][0]
-scaler = sklearn.preprocessing.StandardScaler().fit(mdlParams['meta_array'][train_indices, :])
+if mdlParams['model_type'] != 'biomedclip' and mdlParams['scale_features']:
+    train_indices = mdlParams['trainIndCV'][0]
+    scaler = sklearn.preprocessing.StandardScaler().fit(mdlParams['meta_array'][train_indices, :])
+else:
+    scaler = None
 
 class_names = ['NEV', 'BCC', 'SCC', 'MEL']
 
@@ -90,7 +100,10 @@ async def predict(
             'cancer_history': cancer_history
         }
 
-        meta_array = build_meta_vector(meta_dict, mdlParams, scaler)
+        if mdlParams['model_type'] == 'biomedclip':
+            meta_array = build_text_tokens(meta_dict, mdlParams, tokenizer)
+        else:
+            meta_array = build_meta_vector(meta_dict, mdlParams, scaler)
         meta_tensor = torch.from_numpy(meta_array).float().to(device)
 
         with torch.no_grad():

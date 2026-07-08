@@ -90,74 +90,78 @@ if __name__ == '__main__':
         modelVars['dataloader_trainInd'] = DataLoader(dataset_train, batch_size=mdlParams['batchSize'], shuffle=True, num_workers=num_workers, pin_memory=False, drop_last=True)
         modelVars['dataloader_valInd'] = DataLoader(dataset_val, batch_size=mdlParams['batchSize'], shuffle=False, num_workers=num_workers, pin_memory=False)
 
-        modelVars['model'] = models.getModel(mdlParams)()
         modelVars['softmax'] = nn.Softmax(dim=1)
-        
-        # 학습된 가중치 불러오는 로직
-        if mdlParams.get('meta_features', None) is not None:
-            chkPath = os.path.join(mdlParams['model_load_path'], f'best_fold{cv}.pt')
-            
-            if os.path.isfile(chkPath):
-                print(f"✅ Restoring best lesion-trained CNN from: {chkPath}")
-                
-                state = torch.load(chkPath, map_location=device, weights_only=False)
-                
-                curr_model_dict = modelVars['model'].state_dict()
-            
-                for name, param in state['state_dict'].items():
-                    if name in curr_model_dict and curr_model_dict[name].shape == param.shape:
-                        curr_model_dict[name].copy_(param)
-                    else:
-                        if name not in curr_model_dict:
-                            print(f"⚠️ Skipping {name}: not in current model")
-                
-                modelVars['model'].load_state_dict(curr_model_dict)
-            else:
-                print(f"❌ Warning: No best model found at {chkPath}. Starting from scratch.")
 
-        if 'Dense' in mdlParams['model_type']:
-            if mdlParams['input_size'][0] != 224:
-                modelVars['model'] = utils.modify_densenet_avg_pool(modelVars['model'])
-                #print(modelVars['model'])
-            num_ftrs = modelVars['model'].classifier.in_features
-            modelVars['model'].classifier = nn.Linear(num_ftrs, mdlParams['numClasses'])
-            #print(modelVars['model'])
-        elif 'efficient' in mdlParams['model_type']:
-            num_ftrs = modelVars['model']._fc.in_features
-            modelVars['model']._fc = nn.Linear(num_ftrs, mdlParams['numClasses'])
-        
-        modelVars['model'] = modelVars['model'].to(device)
+        if mdlParams['model_type'] == 'biomedclip':
+            modelVars['model'] = models.BiomedCLIPMultiModal(mdlParams).to(device)
+        else:
+            modelVars['model'] = models.getModel(mdlParams)()
 
-        if mdlParams.get('meta_features',None) is not None:
-            # freeze cnn first
-            if mdlParams['freeze_cnn']:
-                # deactivate all
-                for param in modelVars['model'].parameters():
-                    param.requires_grad = False            
-                if 'efficient' in mdlParams['model_type']:
-                    # Activate fc
+            # 학습된 가중치 불러오는 로직
+            if mdlParams.get('meta_features', None) is not None:
+                chkPath = os.path.join(mdlParams['model_load_path'], f'best_fold{cv}.pt')
+
+                if os.path.isfile(chkPath):
+                    print(f"✅ Restoring best lesion-trained CNN from: {chkPath}")
+
+                    state = torch.load(chkPath, map_location=device, weights_only=False)
+
+                    curr_model_dict = modelVars['model'].state_dict()
+
+                    for name, param in state['state_dict'].items():
+                        if name in curr_model_dict and curr_model_dict[name].shape == param.shape:
+                            curr_model_dict[name].copy_(param)
+                        else:
+                            if name not in curr_model_dict:
+                                print(f"⚠️ Skipping {name}: not in current model")
+
+                    modelVars['model'].load_state_dict(curr_model_dict)
+                else:
+                    print(f"❌ Warning: No best model found at {chkPath}. Starting from scratch.")
+
+            if 'Dense' in mdlParams['model_type']:
+                if mdlParams['input_size'][0] != 224:
+                    modelVars['model'] = utils.modify_densenet_avg_pool(modelVars['model'])
+                num_ftrs = modelVars['model'].classifier.in_features
+                modelVars['model'].classifier = nn.Linear(num_ftrs, mdlParams['numClasses'])
+            elif 'efficient' in mdlParams['model_type']:
+                num_ftrs = modelVars['model']._fc.in_features
+                modelVars['model']._fc = nn.Linear(num_ftrs, mdlParams['numClasses'])
+
+            modelVars['model'] = modelVars['model'].to(device)
+
+            if mdlParams.get('meta_features',None) is not None:
+                # freeze cnn first
+                if mdlParams['freeze_cnn']:
+                    # deactivate all
+                    for param in modelVars['model'].parameters():
+                        param.requires_grad = False
+                    if 'efficient' in mdlParams['model_type']:
+                        # Activate fc
+                        for param in modelVars['model']._fc.parameters():
+                            param.requires_grad = True
+                else:
+                    # mark cnn parameters
+                    for param in modelVars['model'].parameters():
+                        param.is_cnn_param = True
+                    # unmark fc
                     for param in modelVars['model']._fc.parameters():
-                        param.requires_grad = True                              
-            else:
-                # mark cnn parameters
+                        param.is_cnn_param = False
+                # modify model
+                modelVars['model'] = models.modify_meta(mdlParams,modelVars['model'])
+                modelVars['model'] = modelVars['model'].to(device)
+                # Mark new parameters
                 for param in modelVars['model'].parameters():
-                    param.is_cnn_param = True
-                # unmark fc
-                for param in modelVars['model']._fc.parameters():
-                    param.is_cnn_param = False                              
-            # modify model
-            modelVars['model'] = models.modify_meta(mdlParams,modelVars['model']) 
-            modelVars['model'] = modelVars['model'].to(device) 
-            # Mark new parameters
-            for param in modelVars['model'].parameters():
-                if not hasattr(param, 'is_cnn_param'):
-                    param.is_cnn_param = False        
+                    if not hasattr(param, 'is_cnn_param'):
+                        param.is_cnn_param = False
 
-        
+
         weights = mdlParams['class_weights'].to(device)
         modelVars['criterion'] = nn.CrossEntropyLoss(weight=weights)
 
-        if mdlParams.get('meta_features',None) is not None:
+        if mdlParams['model_type'] == 'biomedclip':
+            modelVars['optimizer'] = optim.Adam(filter(lambda p: p.requires_grad, modelVars['model'].parameters()), lr=mdlParams['learning_rate_meta'])
+        elif mdlParams.get('meta_features',None) is not None:
             if mdlParams['freeze_cnn']:
                 modelVars['optimizer'] = optim.Adam(filter(lambda p: p.requires_grad, modelVars['model'].parameters()), lr=mdlParams['learning_rate_meta'])
                 # sanity check
