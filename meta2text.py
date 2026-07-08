@@ -8,7 +8,8 @@ import pandas as pd
 범주형 14 region, 
 범주형 2 smoke, skin_cancer_history, itch, grew, hurt, changed, bleed, elevation
 
-A 
+전체 문장
+A 45-year-old female presents with a lesion on the face. The patient is a smoker and has a history of skin cancer. The lesion has been itching, growing, hurting, changing, bleeding, elevating.
 """
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
@@ -16,11 +17,11 @@ CSV_PATH = os.path.join(DATA_DIR, 'metadata.csv')
 
 SYMPTOM_LABELS = {
     'itch': 'itching',
-    'grew': 'growing in size',
+    'grew': 'growing',
     'hurt': 'hurting',
-    'changed': 'changing in appearance',
+    'changed': 'changing',
     'bleed': 'bleeding',
-    'elevation': 'raised (elevated)',
+    'elevation': 'elevating',
 }
 
 
