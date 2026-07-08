@@ -12,6 +12,11 @@ import torch
 from efficientnet_pytorch import EfficientNet
 from collections import OrderedDict
 import torch.nn as nn
+import open_clip
+
+BIOMEDCLIP_TAG = 'hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224'
+BIOMEDCLIP_CONTEXT_LENGTH = 256
+BIOMEDCLIP_EMBED_DIM = 512
 
 def Dense121(config):
     return models.densenet121(pretrained=True)
@@ -277,3 +282,53 @@ class MetaOnlyModel(nn.Module):
         # 만약 inputs[1](meta)만 바로 넘긴다면 x를 그대로 쓰면 됨
         x = self.backbone(x)
         return self.classifier(x)
+
+
+def get_biomedclip_tokenizer():
+    return open_clip.get_tokenizer(BIOMEDCLIP_TAG)
+
+
+def get_biomedclip_preprocess():
+    _, _, preprocess = open_clip.create_model_and_transforms(BIOMEDCLIP_TAG)
+    return preprocess
+
+
+class BiomedCLIPMultiModal(nn.Module):
+    """이미지+텍스트를 BiomedCLIP(freeze)으로 인코딩 후 concat -> classifier로 4-class 분류."""
+
+    def __init__(self, mdlParams):
+        super().__init__()
+        clip_model, _, _ = open_clip.create_model_and_transforms(BIOMEDCLIP_TAG)
+        self.clip = clip_model
+        self.freeze = mdlParams.get('freeze_biomedclip', True)
+        if self.freeze:
+            for p in self.clip.parameters():
+                p.requires_grad = False
+
+        fusion_in = BIOMEDCLIP_EMBED_DIM * 2
+        fc_after = mdlParams.get('fc_layers_after', [])
+        if fc_after:
+            self.meta_after = nn.Sequential(
+                nn.Linear(fusion_in, fc_after[0]),
+                nn.BatchNorm1d(fc_after[0]),
+                nn.ReLU())
+            classifier_in = fc_after[0]
+        else:
+            self.meta_after = None
+            classifier_in = fusion_in
+        self.classifier = nn.Linear(classifier_in, mdlParams['numClasses'])
+
+    def forward(self, inputs):
+        x, text_tokens = inputs
+        text_tokens = text_tokens.long()
+        if self.freeze:
+            with torch.no_grad():
+                image_features = self.clip.encode_image(x)
+                text_features = self.clip.encode_text(text_tokens)
+        else:
+            image_features = self.clip.encode_image(x)
+            text_features = self.clip.encode_text(text_tokens)
+        features = torch.cat((image_features, text_features), dim=1)
+        if self.meta_after is not None:
+            features = self.meta_after(features)
+        return self.classifier(features)

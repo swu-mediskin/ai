@@ -8,6 +8,27 @@ import os
 import sklearn.preprocessing
 from torchvision import transforms
 import models
+from meta2text import row2text
+
+BOOL_META_FIELDS = ['smoke', 'skin_cancer_history', 'itch', 'grew', 'hurt', 'changed', 'bleed', 'elevation']
+
+
+def build_text_tokens(meta_dict, mdlParams, tokenizer):
+    """API로 받은 raw 메타데이터 dict -> row2text가 기대하는 표기(대문자)로 정규화 -> 자연어 문장 -> BiomedCLIP 토큰"""
+    normalized = dict(meta_dict)
+    if normalized.get('gender') is not None:
+        normalized['gender'] = str(normalized['gender']).upper()
+    if normalized.get('region') is not None:
+        normalized['region'] = str(normalized['region']).upper()
+    for key in BOOL_META_FIELDS:
+        if normalized.get(key) is not None:
+            normalized[key] = str(normalized[key]).upper()
+
+    text = row2text(normalized)
+    tokens = tokenizer([text], context_length=models.BIOMEDCLIP_CONTEXT_LENGTH)
+    print(f"\n📋 META -> TEXT 변환\n  입력: {meta_dict}\n  문장: {text}")
+    return tokens.numpy().astype(np.float32)
+
 
 def build_meta_vector(meta_dict, mdlParams, scaler=None):
     """메타데이터 dict → 전처리된 numpy array 반환"""
@@ -73,14 +94,20 @@ def inference(img_name, meta_dict):
     else:
         device = torch.device("cpu")
 
-    model = models.getModel(mdlParams)()
-    if 'efficient' in mdlParams['model_type']:
-        num_ftrs = model._fc.in_features
-        model._fc = nn.Linear(num_ftrs, mdlParams['numClasses'])
-    if mdlParams.get('meta_features', None) is not None:
-        model = models.modify_meta(mdlParams, model)
+    if mdlParams['model_type'] == 'biomedclip':
+        model = models.BiomedCLIPMultiModal(mdlParams)
+    else:
+        model = models.getModel(mdlParams)()
+        if 'efficient' in mdlParams['model_type']:
+            num_ftrs = model._fc.in_features
+            model._fc = nn.Linear(num_ftrs, mdlParams['numClasses'])
+        if mdlParams.get('meta_features', None) is not None:
+            model = models.modify_meta(mdlParams, model)
 
-    chkPath = 'results/2019.pad_multi_all_real_aug/multi_all_real_aug/best_fold0.pt'
+    if mdlParams['model_type'] == 'biomedclip':
+        chkPath = 'results/2019.pad_biomedclip/multi_all_real_aug_2/best_fold0.pt'
+    else:
+        chkPath = 'results/2019.pad_multi_all_real_aug/multi_all_real_aug/best_fold0.pt'
     if os.path.isfile(chkPath):
         state = torch.load(chkPath, map_location=device, weights_only=False)
         model.load_state_dict(state['state_dict'])
@@ -99,10 +126,17 @@ def inference(img_name, meta_dict):
     ])
     img_tensor = preprocess(input_img).unsqueeze(0).to(device)
 
-    if mdlParams.get('meta_features', None) is not None:
-        scaler = sklearn.preprocessing.StandardScaler().fit(
-            mdlParams['meta_array'][mdlParams['trainIndCV'][0], :]
-        )
+    if mdlParams['model_type'] == 'biomedclip':
+        tokenizer = models.get_biomedclip_tokenizer()
+        meta_array = build_text_tokens(meta_dict, mdlParams, tokenizer)
+        meta_tensor = torch.from_numpy(meta_array).float().to(device)
+        inputs = [img_tensor, meta_tensor]
+    elif mdlParams.get('meta_features', None) is not None:
+        scaler = None
+        if mdlParams['scale_features']:
+            scaler = sklearn.preprocessing.StandardScaler().fit(
+                mdlParams['meta_array'][mdlParams['trainIndCV'][0], :]
+            )
         meta_array = build_meta_vector(meta_dict, mdlParams, scaler)
         meta_tensor = torch.from_numpy(meta_array).float().to(device)
         inputs = [img_tensor, meta_tensor]
