@@ -346,15 +346,15 @@ class BiomedCLIPMultiModal(nn.Module):
         text_tokens = text_tokens.long()
         if self.freeze and not self.visual_trainable:
             with torch.no_grad():
-                image_features = self.clip.encode_image(x)
+                image_features = self.clip.encode_image(x, normalize=True)
         else:
-            image_features = self.clip.encode_image(x)
+            image_features = self.clip.encode_image(x, normalize=True)
 
         if self.freeze and not self.text_trainable:
             with torch.no_grad():
-                text_features = self.clip.encode_text(text_tokens)
+                text_features = self.clip.encode_text(text_tokens, normalize=True)
         else:
-            text_features = self.clip.encode_text(text_tokens)
+            text_features = self.clip.encode_text(text_tokens, normalize=True)
 
         if self.fusion_method == 'elementwise':
             features = image_features * text_features
