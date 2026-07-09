@@ -301,9 +301,20 @@ class BiomedCLIPMultiModal(nn.Module):
         clip_model, _, _ = open_clip.create_model_and_transforms(BIOMEDCLIP_TAG)
         self.clip = clip_model
         self.freeze = mdlParams.get('freeze_biomedclip', True)
+        unfreeze_visual_blocks = mdlParams.get('unfreeze_visual_blocks', 0)
+        self.visual_trainable = unfreeze_visual_blocks > 0
+
         if self.freeze:
             for p in self.clip.parameters():
                 p.requires_grad = False
+            # 이미지 인코더(ViT trunk)의 마지막 N개 블록만 재활성화. 텍스트 인코더는 항상 freeze 유지.
+            if self.visual_trainable:
+                trunk = self.clip.visual.trunk
+                unfrozen_modules = list(trunk.blocks[-unfreeze_visual_blocks:]) + [trunk.norm]
+                for module in unfrozen_modules:
+                    for p in module.parameters():
+                        p.requires_grad = True
+                        p.is_cnn_param = True
 
         self.fusion_method = mdlParams.get('fusion_method', 'concat')
         fusion_in = BIOMEDCLIP_EMBED_DIM * 2 if self.fusion_method == 'concat' else BIOMEDCLIP_EMBED_DIM
@@ -323,12 +334,17 @@ class BiomedCLIPMultiModal(nn.Module):
     def forward(self, inputs):
         x, text_tokens = inputs
         text_tokens = text_tokens.long()
-        if self.freeze:
+        if self.freeze and not self.visual_trainable:
             with torch.no_grad():
                 image_features = self.clip.encode_image(x)
-                text_features = self.clip.encode_text(text_tokens)
         else:
             image_features = self.clip.encode_image(x)
+
+        if self.freeze:
+            # 텍스트 인코더는 unfreeze_visual_blocks 설정과 무관하게 항상 freeze 유지
+            with torch.no_grad():
+                text_features = self.clip.encode_text(text_tokens)
+        else:
             text_features = self.clip.encode_text(text_tokens)
 
         if self.fusion_method == 'elementwise':
