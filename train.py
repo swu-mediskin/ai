@@ -115,7 +115,13 @@ def run_fold(mdlParams, device, cv):
     modelVars['criterion'] = nn.CrossEntropyLoss(weight=weights)
 
     if mdlParams['model_type'] == 'biomedclip':
-        modelVars['optimizer'] = optim.Adam(filter(lambda p: p.requires_grad, modelVars['model'].parameters()), lr=mdlParams['learning_rate_meta'])
+        if mdlParams.get('unfreeze_visual_blocks', 0) > 0:
+            modelVars['optimizer'] = optim.Adam([
+                                                {'params': filter(lambda p: p.requires_grad and not getattr(p, 'is_cnn_param', False), modelVars['model'].parameters()), 'lr': mdlParams['learning_rate_meta']},
+                                                {'params': filter(lambda p: p.requires_grad and getattr(p, 'is_cnn_param', False), modelVars['model'].parameters()), 'lr': mdlParams['learning_rate']}
+                                                ], lr=mdlParams['learning_rate'])
+        else:
+            modelVars['optimizer'] = optim.Adam(filter(lambda p: p.requires_grad, modelVars['model'].parameters()), lr=mdlParams['learning_rate_meta'])
     elif mdlParams.get('meta_features',None) is not None:
         if mdlParams['freeze_cnn']:
             modelVars['optimizer'] = optim.Adam(filter(lambda p: p.requires_grad, modelVars['model'].parameters()), lr=mdlParams['learning_rate_meta'])
