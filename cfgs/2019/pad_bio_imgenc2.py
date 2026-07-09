@@ -31,7 +31,7 @@ def init(mdlParams_):
     mdlParams['freeze_biomedclip'] = True
     # 이미지 인코더(ViT trunk)의 마지막 2블록만 unfreeze. 텍스트 인코더는 계속 freeze.
     mdlParams['unfreeze_visual_blocks'] = 2
-    mdlParams['learning_rate_meta'] = 0.00001
+    mdlParams['learning_rate_meta'] = 0.001
     mdlParams['dropout_meta'] = 0.4
     mdlParams['fc_layers_after'] = [1024]
 
