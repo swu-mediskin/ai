@@ -327,7 +327,12 @@ class BiomedCLIPMultiModal(nn.Module):
                         p.is_cnn_param = True
 
         self.fusion_method = mdlParams.get('fusion_method', 'concat')
-        fusion_in = BIOMEDCLIP_EMBED_DIM * 2 if self.fusion_method == 'concat' else BIOMEDCLIP_EMBED_DIM
+        # modality: 'multimodal'(기본) / 'image_only' / 'text_only'
+        self.modality = mdlParams.get('modality', 'multimodal')
+        if self.modality == 'multimodal':
+            fusion_in = BIOMEDCLIP_EMBED_DIM * 2 if self.fusion_method == 'concat' else BIOMEDCLIP_EMBED_DIM
+        else:
+            fusion_in = BIOMEDCLIP_EMBED_DIM
 
         fc_after = mdlParams.get('fc_layers_after', [])
         if fc_after:
@@ -344,19 +349,26 @@ class BiomedCLIPMultiModal(nn.Module):
     def forward(self, inputs):
         x, text_tokens = inputs
         text_tokens = text_tokens.long()
-        if self.freeze and not self.visual_trainable:
-            with torch.no_grad():
+
+        if self.modality != 'text_only':
+            if self.freeze and not self.visual_trainable:
+                with torch.no_grad():
+                    image_features = self.clip.encode_image(x, normalize=True)
+            else:
                 image_features = self.clip.encode_image(x, normalize=True)
-        else:
-            image_features = self.clip.encode_image(x, normalize=True)
 
-        if self.freeze and not self.text_trainable:
-            with torch.no_grad():
+        if self.modality != 'image_only':
+            if self.freeze and not self.text_trainable:
+                with torch.no_grad():
+                    text_features = self.clip.encode_text(text_tokens, normalize=True)
+            else:
                 text_features = self.clip.encode_text(text_tokens, normalize=True)
-        else:
-            text_features = self.clip.encode_text(text_tokens, normalize=True)
 
-        if self.fusion_method == 'elementwise':
+        if self.modality == 'image_only':
+            features = image_features
+        elif self.modality == 'text_only':
+            features = text_features
+        elif self.fusion_method == 'elementwise':
             features = image_features * text_features
         else:
             features = torch.cat((image_features, text_features), dim=1)
