@@ -302,15 +302,25 @@ class BiomedCLIPMultiModal(nn.Module):
         self.clip = clip_model
         self.freeze = mdlParams.get('freeze_biomedclip', True)
         unfreeze_visual_blocks = mdlParams.get('unfreeze_visual_blocks', 0)
+        unfreeze_text_blocks = mdlParams.get('unfreeze_text_blocks', 0)
         self.visual_trainable = unfreeze_visual_blocks > 0
+        self.text_trainable = unfreeze_text_blocks > 0
 
         if self.freeze:
             for p in self.clip.parameters():
                 p.requires_grad = False
-            # 이미지 인코더(ViT trunk)의 마지막 N개 블록만 재활성화. 텍스트 인코더는 항상 freeze 유지.
+            # 이미지 인코더(ViT trunk)의 마지막 N개 블록만 재활성화.
             if self.visual_trainable:
                 trunk = self.clip.visual.trunk
                 unfrozen_modules = list(trunk.blocks[-unfreeze_visual_blocks:]) + [trunk.norm]
+                for module in unfrozen_modules:
+                    for p in module.parameters():
+                        p.requires_grad = True
+                        p.is_cnn_param = True
+            # 텍스트 인코더(PubMedBERT)의 마지막 N개 block(layer)만 재활성화.
+            if self.text_trainable:
+                bert_encoder = self.clip.text.transformer.encoder
+                unfrozen_modules = list(bert_encoder.layer[-unfreeze_text_blocks:]) + [self.clip.text.proj]
                 for module in unfrozen_modules:
                     for p in module.parameters():
                         p.requires_grad = True
@@ -340,8 +350,7 @@ class BiomedCLIPMultiModal(nn.Module):
         else:
             image_features = self.clip.encode_image(x)
 
-        if self.freeze:
-            # 텍스트 인코더는 unfreeze_visual_blocks 설정과 무관하게 항상 freeze 유지
+        if self.freeze and not self.text_trainable:
             with torch.no_grad():
                 text_features = self.clip.encode_text(text_tokens)
         else:
