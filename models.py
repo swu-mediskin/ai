@@ -294,7 +294,7 @@ def get_biomedclip_preprocess():
 
 
 class BiomedCLIPMultiModal(nn.Module):
-    """이미지+텍스트를 BiomedCLIP(freeze)으로 인코딩 후 concat -> classifier로 4-class 분류."""
+    """이미지+텍스트를 BiomedCLIP(freeze)으로 인코딩 후 fusion -> classifier로 4-class 분류."""
 
     def __init__(self, mdlParams):
         super().__init__()
@@ -305,7 +305,9 @@ class BiomedCLIPMultiModal(nn.Module):
             for p in self.clip.parameters():
                 p.requires_grad = False
 
-        fusion_in = BIOMEDCLIP_EMBED_DIM * 2
+        self.fusion_method = mdlParams.get('fusion_method', 'concat')
+        fusion_in = BIOMEDCLIP_EMBED_DIM * 2 if self.fusion_method == 'concat' else BIOMEDCLIP_EMBED_DIM
+
         fc_after = mdlParams.get('fc_layers_after', [])
         if fc_after:
             self.meta_after = nn.Sequential(
@@ -328,7 +330,12 @@ class BiomedCLIPMultiModal(nn.Module):
         else:
             image_features = self.clip.encode_image(x)
             text_features = self.clip.encode_text(text_tokens)
-        features = torch.cat((image_features, text_features), dim=1)
+
+        if self.fusion_method == 'elementwise':
+            features = image_features * text_features
+        else:
+            features = torch.cat((image_features, text_features), dim=1)
+
         if self.meta_after is not None:
             features = self.meta_after(features)
         return self.classifier(features)
