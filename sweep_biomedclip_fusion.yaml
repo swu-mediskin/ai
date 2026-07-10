@@ -6,8 +6,8 @@ metric:
   goal: maximize
 parameters:
   learning_rate_meta:
-    values: [0.001, 0.0001, 0.00001]
+    values: [0.001]
   use_meta_after:
     values: [true, false]
   fusion_method:
-    values: ["concat", "elementwise"]
+    values: ["elementwise"]

@@ -20,7 +20,7 @@ def pick_device():
 
 def build_mdl_name(fusion_method, use_meta_after, lr):
     fusion_tag = 'co' if fusion_method == 'concat' else 'ew'
-    after_tag = '_after1024' if use_meta_after else ''
+    after_tag = '_after512' if use_meta_after else ''
     lr_tag = f"{lr:.0e}"  # 0.001 -> "1e-03", 0.0001 -> "1e-04", 0.00001 -> "1e-05"
     return f"bio_{fusion_tag}{after_tag}_{lr_tag}"
 
@@ -40,7 +40,7 @@ def main():
     mdlParams['saveDirBase'] = mdlParams['saveDir'] + MODEL_CFG
 
     mdlParams['learning_rate_meta'] = cfg.learning_rate_meta
-    mdlParams['fc_layers_after'] = [1024] if cfg.use_meta_after else []
+    mdlParams['fc_layers_after'] = [512] if cfg.use_meta_after else []
     mdlParams['fusion_method'] = cfg.fusion_method
     mdlParams['epoch'] = 50
 
