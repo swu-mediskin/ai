@@ -116,28 +116,34 @@ def run_fold(mdlParams, device, cv):
 
     if mdlParams['model_type'] == 'biomedclip':
         if mdlParams.get('unfreeze_visual_blocks', 0) > 0 or mdlParams.get('unfreeze_text_blocks', 0) > 0:
-            modelVars['optimizer'] = optim.Adam([
+            modelVars['optimizer'] = optim.AdamW([
                                                 {'params': filter(lambda p: p.requires_grad and not getattr(p, 'is_cnn_param', False), modelVars['model'].parameters()), 'lr': mdlParams['learning_rate_meta']},
                                                 {'params': filter(lambda p: p.requires_grad and getattr(p, 'is_cnn_param', False), modelVars['model'].parameters()), 'lr': mdlParams['learning_rate']}
-                                                ], lr=mdlParams['learning_rate'])
+                                                ], lr=mdlParams['learning_rate'], weight_decay=0.2, betas=(0.9, 0.98), eps=1.0e-6)
         else:
-            modelVars['optimizer'] = optim.Adam(filter(lambda p: p.requires_grad, modelVars['model'].parameters()), lr=mdlParams['learning_rate_meta'])
+            modelVars['optimizer'] = optim.AdamW(filter(lambda p: p.requires_grad, modelVars['model'].parameters()), lr=mdlParams['learning_rate_meta'], weight_decay=0.2, betas=(0.9, 0.98), eps=1.0e-6)
     elif mdlParams.get('meta_features',None) is not None:
         if mdlParams['freeze_cnn']:
-            modelVars['optimizer'] = optim.Adam(filter(lambda p: p.requires_grad, modelVars['model'].parameters()), lr=mdlParams['learning_rate_meta'])
+            modelVars['optimizer'] = optim.AdamW(filter(lambda p: p.requires_grad, modelVars['model'].parameters()), lr=mdlParams['learning_rate_meta'], weight_decay=0.2, betas=(0.9, 0.98), eps=1.0e-6)
             # sanity check
             for param in filter(lambda p: p.requires_grad, modelVars['model'].parameters()):
                 print(param.name,param.shape)
         else:
-            modelVars['optimizer'] = optim.Adam([
+            modelVars['optimizer'] = optim.AdamW([
                                                 {'params': filter(lambda p: not p.is_cnn_param, modelVars['model'].parameters()), 'lr': mdlParams['learning_rate_meta']},
                                                 {'params': filter(lambda p: p.is_cnn_param, modelVars['model'].parameters()), 'lr': mdlParams['learning_rate']}
-                                                ], lr=mdlParams['learning_rate'])
+                                                ], lr=mdlParams['learning_rate'], weight_decay=0.2, betas=(0.9, 0.98), eps=1.0e-6)
     else:
-        modelVars['optimizer'] = optim.Adam(modelVars['model'].parameters(), lr=mdlParams['learning_rate'])
+        modelVars['optimizer'] = optim.AdamW(modelVars['model'].parameters(), lr=mdlParams['learning_rate'], weight_decay=0.2, betas=(0.9, 0.98), eps=1.0e-6)
 
 
-    modelVars['scheduler'] = lr_scheduler.StepLR(modelVars['optimizer'], step_size=mdlParams['lowerLRAfter'], gamma=1/np.float32(mdlParams['LRstep']))
+    # 200 step 선형 warmup 후 나머지 스텝 동안 cosine decay (step 단위 스케줄링).
+    steps_per_epoch = len(modelVars['dataloader_trainInd'])
+    total_steps = mdlParams['epoch'] * steps_per_epoch
+    warmup_steps = min(200, total_steps)
+    warmup_scheduler = lr_scheduler.LinearLR(modelVars['optimizer'], start_factor=1e-3, end_factor=1.0, total_iters=warmup_steps)
+    cosine_scheduler = lr_scheduler.CosineAnnealingLR(modelVars['optimizer'], T_max=max(total_steps - warmup_steps, 1))
+    modelVars['scheduler'] = lr_scheduler.SequentialLR(modelVars['optimizer'], schedulers=[warmup_scheduler, cosine_scheduler], milestones=[warmup_steps])
     modelVars['softmax'] = nn.Softmax(dim=1)
 
 
@@ -167,6 +173,7 @@ def run_fold(mdlParams, device, cv):
             loss = modelVars['criterion'](outputs, labels)
             loss.backward()
             modelVars['optimizer'].step()
+            modelVars['scheduler'].step()
 
             with torch.no_grad():
                 per_sample_loss = nn.CrossEntropyLoss(reduction='none')(outputs, labels)
@@ -177,9 +184,6 @@ def run_fold(mdlParams, device, cv):
                         class_train_loss_count[c] += mask.sum()
 
             pbar.set_postfix(loss=f"{loss.item():.4f}")
-
-        if epoch >= mdlParams['lowerLRat'] - mdlParams['lowerLRAfter']:
-            modelVars['scheduler'].step()
 
         modelVars['model'].eval()
         res = utils.getErrClassification_mgpu(mdlParams, eval_set, modelVars)

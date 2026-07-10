@@ -31,7 +31,7 @@ def init(mdlParams_):
     mdlParams['freeze_biomedclip'] = True
     mdlParams['learning_rate_meta'] = 0.00001
     mdlParams['dropout_meta'] = 0.4
-    mdlParams['fc_layers_after'] = [1024]
+    mdlParams['fc_layers_after'] = [512]
 
     mdlParams['meta_features'] = ['biomedclip_text']
     mdlParams['meta_feature_sizes'] = [models.BIOMEDCLIP_CONTEXT_LENGTH]
