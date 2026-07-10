@@ -48,7 +48,9 @@ munch==4.0.0
 nest-asyncio==1.6.0
 networkx==3.4.2
 numpy==2.2.6
+openai
 open_clip_torch==3.3.0
+python-dotenv
 opencv-python-headless==4.13.0.92
 packaging==26.0
 pandas==2.3.3
