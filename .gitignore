@@ -1,6 +1,7 @@
 __pycache__/
 .venv/
 data/
+.env
 pc_cfgs/pad_cfg.py
 results/
 wandb/
