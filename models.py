@@ -370,6 +370,8 @@ class BiomedCLIPMultiModal(nn.Module):
             features = text_features
         elif self.fusion_method == 'elementwise':
             features = image_features * text_features
+        elif self.fusion_method == 'average':
+            features = (image_features + text_features) / 2
         else:
             features = torch.cat((image_features, text_features), dim=1)
 
