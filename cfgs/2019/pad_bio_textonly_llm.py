@@ -87,8 +87,8 @@ def init(mdlParams_):
     for csv_file, is_train in [(train_csv, True), (val_csv, False)]:
         indices_for_this_file = []
         df = pd.read_csv(csv_file)
-        # GPT로 확장된 임상 서술형 문장을 img_id 기준으로 한 번에 준비 (디스크 캐시 재사용)
-        text_dict = build_llm_text_dict(df)
+        # GPT로 확장된 임상 서술형 문장(메타데이터+이미지)을 img_id 기준으로 한 번에 준비 (디스크 캐시 재사용)
+        text_dict = build_llm_text_dict(df, img_folder)
         for _, row in df.iterrows():
             diag_name = row['diagnostic']
             if diag_name in diag_map:

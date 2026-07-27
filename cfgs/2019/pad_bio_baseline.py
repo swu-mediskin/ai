@@ -18,7 +18,7 @@ def init(mdlParams_):
     val_csv = os.path.join(mdlParams['dataDir'], 'folds/fold0/val.csv')
 
     # 이름 설정
-    mdlParams['mdlName'] = 'bio_baseline'
+    mdlParams['mdlName'] = 'bio_co_after1024_1e-03_adamw'
 
     # 모델 기본 설정
     mdlParams['model_type'] = 'biomedclip'
@@ -29,9 +29,9 @@ def init(mdlParams_):
     mdlParams['file_ending'] = '.png'
 
     mdlParams['freeze_biomedclip'] = True
-    mdlParams['learning_rate_meta'] = 0.00001
+    mdlParams['learning_rate_meta'] = 0.001
     mdlParams['dropout_meta'] = 0.4
-    mdlParams['fc_layers_after'] = [512]
+    mdlParams['fc_layers_after'] = [1024]
 
     mdlParams['meta_features'] = ['biomedclip_text']
     mdlParams['meta_feature_sizes'] = [models.BIOMEDCLIP_CONTEXT_LENGTH]
@@ -60,7 +60,8 @@ def init(mdlParams_):
     mdlParams['lowerLRAfter'] = 20
     mdlParams['lowerLRat'] = 40
     mdlParams['LRstep'] = 5
-    mdlParams['epoch'] = 100
+    mdlParams['epoch'] = 50
+    # mdlParams['fusion_method'] = 'average'
 
     # 데이터 증강 설정
     mdlParams['flip_lr_ud'] = True

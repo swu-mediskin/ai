@@ -89,6 +89,39 @@ def row2text(row):
     return " ".join(parts)
 
 
+def row2meta_dict(row):
+    """metadata.csv 한 행에서 GPT에 넘길 raw 메타데이터 dict를 만든다.
+    값이 없는(NaN/UNK) 필드는 생략한다."""
+    meta = {}
+
+    age = row.get('age')
+    if pd.notna(age):
+        meta['age'] = int(age)
+
+    gender = row.get('gender')
+    if pd.notna(gender):
+        meta['gender'] = str(gender).lower()
+
+    region = row.get('region')
+    if pd.notna(region):
+        meta['region'] = str(region).lower()
+
+    smoker = _to_bool(row.get('smoke'))
+    if smoker is not None:
+        meta['smoker'] = smoker
+
+    cancer_hist = _to_bool(row.get('skin_cancer_history'))
+    if cancer_hist is not None:
+        meta['skin_cancer_history'] = cancer_hist
+
+    for col, label in SYMPTOM_LABELS.items():
+        status = _to_bool(row.get(col))
+        if status is not None:
+            meta[label] = status
+
+    return meta
+
+
 def meta2text():
     """
         BiomedCLIP에 text 인풋을 입력하기 위해 기존 메타데이터를 자연어로 변환하는 함수
