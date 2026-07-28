@@ -538,6 +538,27 @@ class FocalLoss(nn.Module):
         if self.size_average: return loss.mean()
         else: return loss.sum()
 
+class CostSensitiveCE(nn.Module):
+    """클래스 빈도 기반 weighted CE에 특정 클래스 쌍(예: SCC-BCC) 오분류 비용을 추가한 손실.
+
+    표준 weighted CE는 정답 클래스 기준으로만 가중치를 주기 때문에, "SCC를 BCC로 착각"처럼
+    임상적으로 더 위험한 특정 오분류 패턴을, 같은 정답 클래스의 다른 오분류(예: SCC를 NEV로 착각)
+    보다 더 강하게 억제할 수 없다. cost_matrix[i, j]는 정답이 i인데 모델이 j에 확률을 할당했을 때의
+    추가 비용이고, 현재 예측 확률분포(softmax)에 그 비용을 곱한 기대 비용을 CE에 더한다.
+    """
+
+    def __init__(self, class_weights, cost_matrix, lambda_cost=1.0):
+        super().__init__()
+        self.register_buffer('class_weights', class_weights)
+        self.register_buffer('cost_matrix', cost_matrix)
+        self.lambda_cost = lambda_cost
+
+    def forward(self, logits, targets):
+        ce = F.cross_entropy(logits, targets, weight=self.class_weights, reduction='none')
+        p = F.softmax(logits, dim=1)
+        expected_cost = (self.cost_matrix[targets] * p).sum(dim=1)
+        return (ce + self.lambda_cost * expected_cost).mean()
+
 def getErrClassification_mgpu(mdlParams, indices, modelVars, exclude_class=None):
     """Helper function to return the error of a set
     Args:
