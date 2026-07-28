@@ -193,7 +193,7 @@ def run_fold(mdlParams, device, cv):
 
         modelVars['model'].eval()
         res = utils.getErrClassification_mgpu(mdlParams, eval_set, modelVars)
-        val_loss, accuracy, recall, precision, specificity, conf_matrix, f1, auc, predictions, targets, _, class_val_loss = res
+        val_loss, accuracy, recall, precision, specificity, conf_matrix, f1, auc, auprc, predictions, targets, _, class_val_loss = res
 
         class_names = ['NEV', 'BCC', 'SCC', 'MEL']
 
@@ -209,6 +209,7 @@ def run_fold(mdlParams, device, cv):
             "accuracy": accuracy,
             "mean_f1_score": mean_f1,
             "mean_auc": np.mean(auc),
+            "mean_auprc": np.mean(auprc),
             "mean_recall": mean_recall,
             "mean_precision": mean_precision,
             "mean_specificity": mean_specificity,
@@ -221,6 +222,7 @@ def run_fold(mdlParams, device, cv):
             metrics_dict[f"label_metrics/{name}_val_loss"] = class_val_loss[i]
             metrics_dict[f"label_metrics/{name}_train_loss"] = class_train_losses[i].item()
             metrics_dict[f"label_metrics/{name}_auc"] = auc[i]
+            metrics_dict[f"label_metrics/{name}_auprc"] = auprc[i]
             metrics_dict[f"label_metrics/{name}_recall"] = recall[i]
             metrics_dict[f"label_metrics/{name}_precision"] = precision[i]
             metrics_dict[f"label_metrics/{name}_specificity"] = specificity[i]
@@ -304,7 +306,7 @@ if __name__ == '__main__':
     for cv in cv_set:
         wandb.init(
             project="mediskin",
-            name=mdlParams['mdlName'] + str(cv),
+            name=mdlParams['mdlName'] + "_f" + str(cv),
             config=mdlParams
         )
 

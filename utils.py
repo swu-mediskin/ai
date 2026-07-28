@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
-from sklearn.metrics import confusion_matrix, auc, roc_curve, f1_score
+from sklearn.metrics import confusion_matrix, auc, roc_curve, f1_score, average_precision_score
 import math
 from PIL import Image
 from torchvision.transforms import InterpolationMode
@@ -815,6 +815,11 @@ def getErrClassification_mgpu(mdlParams, indices, modelVars, exclude_class=None)
         fpr[i], tpr[i], _ = roc_curve(targets[:, i], predictions[:, i])
         roc_auc[i] = auc(fpr[i], tpr[i])
 
+    # AUPRC (Precision-Recall 곡선 아래 면적)
+    auprc = np.zeros([num_classes])
+    for i in range(num_classes):
+        auprc[i] = average_precision_score(targets[:, i], predictions[:, i])
+
     # 클래스별 val loss 계산
     class_val_loss = np.zeros(num_classes)
     criterion_none = nn.CrossEntropyLoss(reduction='none')
@@ -832,8 +837,8 @@ def getErrClassification_mgpu(mdlParams, indices, modelVars, exclude_class=None)
         if mask.sum() > 0:
             class_val_loss[c] = per_sample_loss[mask].mean()
 
-    return np.mean(loss_all), acc, recall, precision, specificity, conf, f1, roc_auc, predictions, targets, predictions_mc, class_val_loss
-    #return np.mean(loss_all), acc, recall, precision, specificity, conf, f1, roc_auc, predictions, targets, predictions_mc 
+    return np.mean(loss_all), acc, recall, precision, specificity, conf, f1, roc_auc, auprc, predictions, targets, predictions_mc, class_val_loss
+    #return np.mean(loss_all), acc, recall, precision, specificity, conf, f1, roc_auc, predictions, targets, predictions_mc
 
 
 def modify_densenet_avg_pool(model):
