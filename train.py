@@ -154,6 +154,10 @@ def run_fold(mdlParams, device, cv):
 
 
     mdlParams['valBest'] = 0.0
+    # Early stopping (val_loss 기준, patience epoch 동안 개선 없으면 중단)
+    early_stopping_patience = mdlParams.get('early_stopping_patience', 10)
+    best_val_loss = np.inf
+    epochs_without_improvement = 0
     start_time = time.time()
     for epoch in range(1, mdlParams['epoch'] + 1):
         pbar = tqdm(enumerate(modelVars['dataloader_trainInd']),
@@ -258,6 +262,15 @@ def run_fold(mdlParams, device, cv):
             torch.save(state, mdlParams['saveDir'] + '/best_fold' + str(cv) + '.pt')
             print("🌟 Best Model Saved!")
 
+        # Early stopping 체크 (val_loss 기준)
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
+            if epochs_without_improvement >= early_stopping_patience:
+                print(f"⏹ Early stopping: val_loss가 {early_stopping_patience}epoch 동안 개선되지 않음 (best val_loss: {best_val_loss:.4f})")
+                break
 
         duration = time.time() - start_time
         print(f"Fold {cv} | Epoch {epoch}/{mdlParams['epoch']} | "
