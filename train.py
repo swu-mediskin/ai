@@ -115,11 +115,17 @@ def run_fold(mdlParams, device, cv):
     modelVars['criterion'] = nn.CrossEntropyLoss(weight=weights)
 
     if mdlParams['model_type'] == 'biomedclip':
-        if mdlParams.get('unfreeze_visual_blocks', 0) > 0 or mdlParams.get('unfreeze_text_blocks', 0) > 0:
-            modelVars['optimizer'] = optim.AdamW([
-                                                {'params': filter(lambda p: p.requires_grad and not getattr(p, 'is_cnn_param', False), modelVars['model'].parameters()), 'lr': mdlParams['learning_rate_meta']},
-                                                {'params': filter(lambda p: p.requires_grad and getattr(p, 'is_cnn_param', False), modelVars['model'].parameters()), 'lr': mdlParams['learning_rate']}
-                                                ], lr=mdlParams['learning_rate'], weight_decay=0.2, betas=(0.9, 0.98), eps=1.0e-6)
+        use_lora = mdlParams.get('use_lora_visual', False) or mdlParams.get('use_lora_text', False)
+        use_unfreeze = mdlParams.get('unfreeze_visual_blocks', 0) > 0 or mdlParams.get('unfreeze_text_blocks', 0) > 0
+        if use_lora or use_unfreeze:
+            param_groups = [
+                {'params': filter(lambda p: p.requires_grad and not getattr(p, 'is_cnn_param', False) and not getattr(p, 'is_lora_param', False), modelVars['model'].parameters()), 'lr': mdlParams['learning_rate_meta']},
+            ]
+            if use_unfreeze:
+                param_groups.append({'params': filter(lambda p: p.requires_grad and getattr(p, 'is_cnn_param', False), modelVars['model'].parameters()), 'lr': mdlParams['learning_rate']})
+            if use_lora:
+                param_groups.append({'params': filter(lambda p: p.requires_grad and getattr(p, 'is_lora_param', False), modelVars['model'].parameters()), 'lr': mdlParams.get('learning_rate_lora', 1e-4)})
+            modelVars['optimizer'] = optim.AdamW(param_groups, lr=mdlParams['learning_rate'], weight_decay=0.2, betas=(0.9, 0.98), eps=1.0e-6)
         else:
             modelVars['optimizer'] = optim.AdamW(filter(lambda p: p.requires_grad, modelVars['model'].parameters()), lr=mdlParams['learning_rate_meta'], weight_decay=0.2, betas=(0.9, 0.98), eps=1.0e-6)
     elif mdlParams.get('meta_features',None) is not None:
