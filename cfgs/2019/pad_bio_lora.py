@@ -1,4 +1,5 @@
 import os
+import re
 import torch
 import numpy as np
 import pandas as pd
@@ -41,6 +42,11 @@ def init(mdlParams_):
     mdlParams['learning_rate_meta'] = 0.001
     mdlParams['dropout_meta'] = 0.4
     mdlParams['fc_layers_after'] = [1024]
+
+    # SCC를 BCC로(혹은 그 반대로) 착각하는 오분류에 weighted CE보다 더 강한 페널티를 추가.
+    mdlParams['use_cost_sensitive_ce'] = True
+    mdlParams['cost_sensitive_pairs'] = [('SCC', 'BCC', 3.0)]
+    mdlParams['cost_sensitive_lambda'] = 1.0
 
     mdlParams['meta_features'] = ['biomedclip_text']
     mdlParams['meta_feature_sizes'] = [models.BIOMEDCLIP_CONTEXT_LENGTH]
@@ -116,12 +122,17 @@ def init(mdlParams_):
     mdlParams['labels_array'] = np.array(mdlParams['labels_list'])
     mdlParams['meta_array'] = np.array([mdlParams['meta_dict'][p] for p in mdlParams['im_paths']])
 
-    # 클래스 가중치 계산 (train 기준)
+    # 클래스 가중치 계산 (train 기준, aug_400.py가 만든 증강 이미지는 제외하고 원본 데이터 분포로 계산)
     train_indices = np.array(mdlParams['trainIndCV'][0]).astype(int)
-    train_labels = mdlParams['labels_array'][train_indices]
+    is_original = np.array([
+        re.search(r'_aug\d+\.', os.path.basename(mdlParams['im_paths'][idx])) is None
+        for idx in train_indices
+    ])
+    original_train_indices = train_indices[is_original]
+    train_labels = mdlParams['labels_array'][original_train_indices]
     class_counts = np.sum(train_labels, axis=0)
 
-    weights = len(train_indices) / (mdlParams['numClasses'] * class_counts)
+    weights = len(original_train_indices) / (mdlParams['numClasses'] * class_counts)
     mdlParams['class_weights'] = torch.FloatTensor(np.array(weights).flatten())
 
     print(f"--- 로드 완료 (Fold 0, BiomedCLIP, 템플릿 메타데이터 문장, LoRA last 2 visual blocks only) ---")
