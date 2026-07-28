@@ -153,8 +153,7 @@ def run_fold(mdlParams, device, cv):
     modelVars['softmax'] = nn.Softmax(dim=1)
 
 
-    mdlParams['valBest'] = 0.0
-    # Early stopping (val_loss 기준, patience epoch 동안 개선 없으면 중단)
+    # Best model 저장 + early stopping 둘 다 val_loss 기준 (patience epoch 동안 개선 없으면 중단)
     early_stopping_patience = mdlParams.get('early_stopping_patience', 10)
     best_val_loss = np.inf
     epochs_without_improvement = 0
@@ -255,17 +254,13 @@ def run_fold(mdlParams, device, cv):
 
         print(f"Fold {cv} | Epoch {epoch} | Train Loss: {loss:.4f} | Acc: {accuracy:.4f} | Recall: {mean_recall:.4f} | Precision: {mean_precision:.4f}")
 
-        # Best Model 저장 로직
-        if mdlParams['valBest'] < mean_recall:
-            mdlParams['valBest'] = mean_recall
-            state = {'epoch': epoch, 'state_dict': modelVars['model'].state_dict(), 'optimizer': modelVars['optimizer'].state_dict()}
-            torch.save(state, mdlParams['saveDir'] + '/best_fold' + str(cv) + '.pt')
-            print("🌟 Best Model Saved!")
-
-        # Early stopping 체크 (val_loss 기준)
+        # Best Model 저장 + Early stopping (둘 다 val_loss 기준)
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             epochs_without_improvement = 0
+            state = {'epoch': epoch, 'state_dict': modelVars['model'].state_dict(), 'optimizer': modelVars['optimizer'].state_dict()}
+            torch.save(state, mdlParams['saveDir'] + '/best_fold' + str(cv) + '.pt')
+            print("🌟 Best Model Saved!")
         else:
             epochs_without_improvement += 1
             if epochs_without_improvement >= early_stopping_patience:
