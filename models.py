@@ -13,6 +13,7 @@ from efficientnet_pytorch import EfficientNet
 from collections import OrderedDict
 import torch.nn as nn
 import open_clip
+from peft import LoraConfig, inject_adapter_in_model
 
 BIOMEDCLIP_TAG = 'hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224'
 BIOMEDCLIP_CONTEXT_LENGTH = 256
@@ -293,6 +294,60 @@ def get_biomedclip_preprocess():
     return preprocess
 
 
+def _lora_layer_range(num_total, num_unfreeze, num_lora):
+    """LoRA 대상 블록 인덱스 구간을 계산한다.
+
+    unfreeze로 이미 풀 파인튜닝되는 마지막 num_unfreeze개 블록과 겹치지 않도록,
+    그 바로 앞의 num_lora개 블록에 LoRA를 적용한다 (num_unfreeze=0이면 기존과 동일하게
+    마지막 num_lora개 블록). 예: 전체 12블록, unfreeze=2, lora=4 -> LoRA는 블록 [6,7,8,9],
+    unfreeze는 블록 [10,11].
+    """
+    end = num_total - num_unfreeze
+    start = end - num_lora
+    if start < 0:
+        raise ValueError(
+            f"lora_blocks({num_lora}) + unfreeze_blocks({num_unfreeze})가 전체 블록 수"
+            f"({num_total})보다 큽니다."
+        )
+    return list(range(start, end))
+
+
+def _inject_lora(scope_module, block_attr_name, layer_idxs, target_modules, r, alpha, dropout):
+    """scope_module 아래 <block_attr_name>의 layer_idxs 블록들에 LoRA 어댑터를 주입한다.
+
+    peft의 layers_pattern 매칭은 named_modules() 키에서 '.<pattern>.<idx>.'를 정규식으로 찾으므로,
+    scope_module은 블록 리스트를 담은 속성의 부모여야 한다 (블록 리스트를 가진 모듈 자신을
+    스코프로 주면 키가 '<block_attr_name>.<idx>...'로 시작해 앞에 점(.)이 없어 매칭에 실패한다).
+    """
+    lora_cfg = LoraConfig(
+        r=r, lora_alpha=alpha, lora_dropout=dropout,
+        target_modules=target_modules,
+        layers_to_transform=layer_idxs,
+        layers_pattern=block_attr_name,
+        bias='none',
+    )
+    inject_adapter_in_model(lora_cfg, scope_module, adapter_name='default')
+
+
+def _mark_lora_trainable(scope_module):
+    """LoRA 파라미터를 학습 대상으로 표시한다.
+
+    peft의 inject_adapter_in_model은 내부적으로 BaseTuner._mark_only_adapters_as_trainable을
+    호출해 scope_module 안의 '어댑터가 아닌 모든 파라미터'의 requires_grad를 무조건 False로
+    되돌려버린다 (LoRA 대상 블록뿐 아니라 unfreeze로 켜둔 다른 블록/norm 등 scope 전체 포함).
+    그래서 is_cnn_param=True(unfreeze로 학습 대상 표시된) 파라미터는 여기서 다시 True로
+    복원해야 한다 — 단순히 "건드리지 않는" 것만으로는 이미 꺼진 값을 되살릴 수 없다.
+    """
+    for name, p in scope_module.named_parameters():
+        if '.lora_A.' in name or '.lora_B.' in name:
+            p.requires_grad = True
+            p.is_lora_param = True
+        elif getattr(p, 'is_cnn_param', False):
+            p.requires_grad = True
+        else:
+            p.requires_grad = False
+
+
 class BiomedCLIPMultiModal(nn.Module):
     """이미지+텍스트를 BiomedCLIP(freeze)으로 인코딩 후 fusion -> classifier로 4-class 분류."""
 
@@ -303,14 +358,27 @@ class BiomedCLIPMultiModal(nn.Module):
         self.freeze = mdlParams.get('freeze_biomedclip', True)
         unfreeze_visual_blocks = mdlParams.get('unfreeze_visual_blocks', 0)
         unfreeze_text_blocks = mdlParams.get('unfreeze_text_blocks', 0)
-        self.visual_trainable = unfreeze_visual_blocks > 0
-        self.text_trainable = unfreeze_text_blocks > 0
+        use_lora_visual = mdlParams.get('use_lora_visual', False)
+        use_lora_text = mdlParams.get('use_lora_text', False)
+        lora_visual_blocks = mdlParams.get('lora_visual_blocks', 0)
+        lora_text_blocks = mdlParams.get('lora_text_blocks', 0)
+        lora_r = mdlParams.get('lora_r', 8)
+        lora_alpha = mdlParams.get('lora_alpha', 16)
+        lora_dropout = mdlParams.get('lora_dropout', 0.05)
+
+        if use_lora_visual and unfreeze_visual_blocks > 0:
+            raise ValueError("use_lora_visual=True와 unfreeze_visual_blocks>0을 동시에 설정할 수 없습니다.")
+        if use_lora_text and unfreeze_text_blocks > 0:
+            raise ValueError("use_lora_text=True와 unfreeze_text_blocks>0을 동시에 설정할 수 없습니다.")
+
+        self.visual_trainable = unfreeze_visual_blocks > 0 or use_lora_visual
+        self.text_trainable = unfreeze_text_blocks > 0 or use_lora_text
 
         if self.freeze:
             for p in self.clip.parameters():
                 p.requires_grad = False
             # 이미지 인코더(ViT trunk)의 마지막 N개 블록만 재활성화.
-            if self.visual_trainable:
+            if unfreeze_visual_blocks > 0:
                 trunk = self.clip.visual.trunk
                 unfrozen_modules = list(trunk.blocks[-unfreeze_visual_blocks:]) + [trunk.norm]
                 for module in unfrozen_modules:
@@ -318,13 +386,31 @@ class BiomedCLIPMultiModal(nn.Module):
                         p.requires_grad = True
                         p.is_cnn_param = True
             # 텍스트 인코더(PubMedBERT)의 마지막 N개 block(layer)만 재활성화.
-            if self.text_trainable:
+            if unfreeze_text_blocks > 0:
                 bert_encoder = self.clip.text.transformer.encoder
                 unfrozen_modules = list(bert_encoder.layer[-unfreeze_text_blocks:]) + [self.clip.text.proj]
                 for module in unfrozen_modules:
                     for p in module.parameters():
                         p.requires_grad = True
                         p.is_cnn_param = True
+            # 이미지 인코더(ViT trunk)의 LoRA 대상 블록에 어댑터 주입.
+            # unfreeze_visual_blocks와 함께 켜져 있으면, unfreeze로 풀 파인튜닝되는 마지막
+            # unfreeze_visual_blocks개 블록 바로 앞의 lora_visual_blocks개 블록에 적용된다
+            # (범위가 겹치지 않도록 _lora_layer_range가 오프셋을 계산).
+            if use_lora_visual:
+                trunk = self.clip.visual.trunk
+                layer_idxs = _lora_layer_range(len(trunk.blocks), unfreeze_visual_blocks, lora_visual_blocks)
+                _inject_lora(self.clip.visual, 'blocks', layer_idxs,
+                             ['qkv', 'proj', 'fc1', 'fc2'], lora_r, lora_alpha, lora_dropout)
+                _mark_lora_trainable(self.clip.visual)
+            # 텍스트 인코더(PubMedBERT)의 LoRA 대상 block(layer)에 어댑터 주입. 위와 동일하게
+            # unfreeze_text_blocks와 겹치지 않는 앞쪽 구간을 사용.
+            if use_lora_text:
+                bert_encoder = self.clip.text.transformer.encoder
+                layer_idxs = _lora_layer_range(len(bert_encoder.layer), unfreeze_text_blocks, lora_text_blocks)
+                _inject_lora(self.clip.text.transformer, 'layer', layer_idxs,
+                             ['query', 'key', 'value', 'dense'], lora_r, lora_alpha, lora_dropout)
+                _mark_lora_trainable(self.clip.text.transformer)
 
         self.fusion_method = mdlParams.get('fusion_method', 'concat')
         # modality: 'multimodal'(기본) / 'image_only' / 'text_only'

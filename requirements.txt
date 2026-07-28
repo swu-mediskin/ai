@@ -1,6 +1,7 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.11.0
 torchvision==0.26.0
+accelerate==1.14.0
 albucore==0.0.24
 albumentations==2.0.8
 annotated-doc==0.0.4
@@ -55,6 +56,7 @@ opencv-python-headless==4.13.0.92
 packaging==26.0
 pandas==2.3.3
 parso==0.8.7
+peft==0.19.1
 pexpect==4.9.0
 pillow==12.2.0
 platformdirs==4.9.4
