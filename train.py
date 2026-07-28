@@ -112,7 +112,20 @@ def run_fold(mdlParams, device, cv):
 
 
     weights = mdlParams['class_weights'].to(device)
-    modelVars['criterion'] = nn.CrossEntropyLoss(weight=weights)
+    if mdlParams.get('use_cost_sensitive_ce', False):
+        # 정답 클래스 기준 weighted CE에 특정 클래스 쌍(예: SCC<->BCC) 오분류 추가 비용을 더함.
+        # cost_sensitive_pairs: [(class_a, class_b, extra_cost), ...], 나머지 오분류 쌍은 기본 비용 1.0.
+        class_name_to_idx = {'NEV': 0, 'BCC': 1, 'SCC': 2, 'MEL': 3}
+        cost_matrix = np.ones((mdlParams['numClasses'], mdlParams['numClasses']))
+        np.fill_diagonal(cost_matrix, 0)
+        for cls_a, cls_b, extra_cost in mdlParams.get('cost_sensitive_pairs', []):
+            i, j = class_name_to_idx[cls_a], class_name_to_idx[cls_b]
+            cost_matrix[i, j] = extra_cost
+            cost_matrix[j, i] = extra_cost
+        cost_matrix = torch.tensor(cost_matrix, dtype=torch.float32).to(device)
+        modelVars['criterion'] = utils.CostSensitiveCE(weights, cost_matrix, lambda_cost=mdlParams.get('cost_sensitive_lambda', 1.0))
+    else:
+        modelVars['criterion'] = nn.CrossEntropyLoss(weight=weights)
 
     if mdlParams['model_type'] == 'biomedclip':
         use_lora = mdlParams.get('use_lora_visual', False) or mdlParams.get('use_lora_text', False)
@@ -153,7 +166,10 @@ def run_fold(mdlParams, device, cv):
     modelVars['softmax'] = nn.Softmax(dim=1)
 
 
-    mdlParams['valBest'] = 0.0
+    # Best model 저장 + early stopping 둘 다 val_loss 기준 (patience epoch 동안 개선 없으면 중단)
+    early_stopping_patience = mdlParams.get('early_stopping_patience', 10)
+    best_val_loss = np.inf
+    epochs_without_improvement = 0
     start_time = time.time()
     for epoch in range(1, mdlParams['epoch'] + 1):
         pbar = tqdm(enumerate(modelVars['dataloader_trainInd']),
@@ -193,7 +209,7 @@ def run_fold(mdlParams, device, cv):
 
         modelVars['model'].eval()
         res = utils.getErrClassification_mgpu(mdlParams, eval_set, modelVars)
-        val_loss, accuracy, recall, precision, specificity, conf_matrix, f1, auc, predictions, targets, _, class_val_loss = res
+        val_loss, accuracy, recall, precision, specificity, conf_matrix, f1, auc, auprc, predictions, targets, _, class_val_loss = res
 
         class_names = ['NEV', 'BCC', 'SCC', 'MEL']
 
@@ -209,6 +225,7 @@ def run_fold(mdlParams, device, cv):
             "accuracy": accuracy,
             "mean_f1_score": mean_f1,
             "mean_auc": np.mean(auc),
+            "mean_auprc": np.mean(auprc),
             "mean_recall": mean_recall,
             "mean_precision": mean_precision,
             "mean_specificity": mean_specificity,
@@ -221,6 +238,7 @@ def run_fold(mdlParams, device, cv):
             metrics_dict[f"label_metrics/{name}_val_loss"] = class_val_loss[i]
             metrics_dict[f"label_metrics/{name}_train_loss"] = class_train_losses[i].item()
             metrics_dict[f"label_metrics/{name}_auc"] = auc[i]
+            metrics_dict[f"label_metrics/{name}_auprc"] = auprc[i]
             metrics_dict[f"label_metrics/{name}_recall"] = recall[i]
             metrics_dict[f"label_metrics/{name}_precision"] = precision[i]
             metrics_dict[f"label_metrics/{name}_specificity"] = specificity[i]
@@ -249,13 +267,18 @@ def run_fold(mdlParams, device, cv):
 
         print(f"Fold {cv} | Epoch {epoch} | Train Loss: {loss:.4f} | Acc: {accuracy:.4f} | Recall: {mean_recall:.4f} | Precision: {mean_precision:.4f}")
 
-        # Best Model 저장 로직
-        if mdlParams['valBest'] < mean_recall:
-            mdlParams['valBest'] = mean_recall
+        # Best Model 저장 + Early stopping (둘 다 val_loss 기준)
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            epochs_without_improvement = 0
             state = {'epoch': epoch, 'state_dict': modelVars['model'].state_dict(), 'optimizer': modelVars['optimizer'].state_dict()}
             torch.save(state, mdlParams['saveDir'] + '/best_fold' + str(cv) + '.pt')
             print("🌟 Best Model Saved!")
-
+        else:
+            epochs_without_improvement += 1
+            if epochs_without_improvement >= early_stopping_patience:
+                print(f"⏹ Early stopping: val_loss가 {early_stopping_patience}epoch 동안 개선되지 않음 (best val_loss: {best_val_loss:.4f})")
+                break
 
         duration = time.time() - start_time
         print(f"Fold {cv} | Epoch {epoch}/{mdlParams['epoch']} | "
@@ -304,7 +327,7 @@ if __name__ == '__main__':
     for cv in cv_set:
         wandb.init(
             project="mediskin",
-            name=mdlParams['mdlName'] + str(cv),
+            name=mdlParams['mdlName'] + "_f" + str(cv),
             config=mdlParams
         )
 

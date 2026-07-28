@@ -1,4 +1,5 @@
 import os
+import re
 import torch
 import numpy as np
 import pandas as pd
@@ -28,16 +29,35 @@ def init(mdlParams_):
     mdlParams['input_size'] = [224, 224, 3]
     mdlParams['file_ending'] = '.png'
 
+    # 학습 하이퍼파라미터
+    mdlParams['batchSize'] = 32
+    mdlParams['learning_rate'] = 0.000001
+    mdlParams['lowerLRAfter'] = 20
+    mdlParams['lowerLRat'] = 40
+    mdlParams['LRstep'] = 5
+    mdlParams['epoch'] = 100
+
+    # BiomedCLIP Unfreeze 관련 설정
     mdlParams['freeze_biomedclip'] = True
     mdlParams['unfreeze_visual_blocks'] = 0
     mdlParams['unfreeze_text_blocks'] = 0
+
+    # LoRA 관련 설정
     mdlParams['use_lora_visual'] = False
     mdlParams['lora_visual_blocks'] = 0
+    mdlParams['learning_rate_lora'] = 0.0003
     mdlParams['use_lora_text'] = False
     mdlParams['lora_text_blocks'] = 0
+
+    # Classification Layer 관련 설정
     mdlParams['learning_rate_meta'] = 0.001
     mdlParams['dropout_meta'] = 0.4
     mdlParams['fc_layers_after'] = [1024]
+
+    # Cost Sensitive CE 관련 설정
+    mdlParams['use_cost_sensitive_ce'] = False
+    mdlParams['cost_sensitive_pairs'] = [('SCC', 'BCC', 3.0)]
+    mdlParams['cost_sensitive_lambda'] = 1.0
 
     mdlParams['meta_features'] = ['biomedclip_text']
     mdlParams['meta_feature_sizes'] = [models.BIOMEDCLIP_CONTEXT_LENGTH]
@@ -60,13 +80,7 @@ def init(mdlParams_):
     mdlParams['peak_at_testerr'] = False
     mdlParams['voting_scheme'] = 'average'
 
-    # 학습 하이퍼파라미터
-    mdlParams['batchSize'] = 32
-    mdlParams['learning_rate'] = 0.000001
-    mdlParams['lowerLRAfter'] = 20
-    mdlParams['lowerLRat'] = 40
-    mdlParams['LRstep'] = 5
-    mdlParams['epoch'] = 100
+    
 
     # 데이터 증강 설정
     mdlParams['flip_lr_ud'] = True
@@ -112,12 +126,17 @@ def init(mdlParams_):
     mdlParams['labels_array'] = np.array(mdlParams['labels_list'])
     mdlParams['meta_array'] = np.array([mdlParams['meta_dict'][p] for p in mdlParams['im_paths']])
 
-    # 클래스 가중치 계산 (train 기준)
+    # 클래스 가중치 계산 (train 기준, aug_400.py가 만든 증강 이미지는 제외하고 원본 데이터 분포로 계산)
     train_indices = np.array(mdlParams['trainIndCV'][0]).astype(int)
-    train_labels = mdlParams['labels_array'][train_indices]
+    is_original = np.array([
+        re.search(r'_aug\d+\.', os.path.basename(mdlParams['im_paths'][idx])) is None
+        for idx in train_indices
+    ])
+    original_train_indices = train_indices[is_original]
+    train_labels = mdlParams['labels_array'][original_train_indices]
     class_counts = np.sum(train_labels, axis=0)
 
-    weights = len(train_indices) / (mdlParams['numClasses'] * class_counts)
+    weights = len(original_train_indices) / (mdlParams['numClasses'] * class_counts)
     mdlParams['class_weights'] = torch.FloatTensor(np.array(weights).flatten())
 
     print(f"--- 로드 완료 (Fold 0, BiomedCLIP, 템플릿 메타데이터 문장, unfreeze/LoRA 없음 - 전체 freeze) ---")
