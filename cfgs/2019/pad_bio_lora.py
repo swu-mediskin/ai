@@ -62,6 +62,10 @@ def init(mdlParams_):
     mdlParams['cost_sensitive_pairs'] = [('SCC', 'BCC', 3.0)]
     mdlParams['cost_sensitive_lambda'] = 1.0
 
+    # Weighted CE 관련 설정 (False면 기본 CE, True면 class_weights 적용)
+    # 지금은 use_cost_sensitive_ce=True라서 이 값은 무시됨 (cost sensitive CE가 우선순위 높음)
+    mdlParams['use_weighted_ce'] = False
+
     mdlParams['meta_features'] = ['biomedclip_text']
     mdlParams['meta_feature_sizes'] = [models.BIOMEDCLIP_CONTEXT_LENGTH]
     mdlParams['scale_features'] = False
