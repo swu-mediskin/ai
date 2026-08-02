@@ -124,8 +124,10 @@ def run_fold(mdlParams, device, cv):
             cost_matrix[j, i] = extra_cost
         cost_matrix = torch.tensor(cost_matrix, dtype=torch.float32).to(device)
         modelVars['criterion'] = utils.CostSensitiveCE(weights, cost_matrix, lambda_cost=mdlParams.get('cost_sensitive_lambda', 1.0))
-    else:
+    elif mdlParams.get('use_weighted_ce', False):
         modelVars['criterion'] = nn.CrossEntropyLoss(weight=weights)
+    else:
+        modelVars['criterion'] = nn.CrossEntropyLoss()
 
     if mdlParams['model_type'] == 'biomedclip':
         use_lora = mdlParams.get('use_lora_visual', False) or mdlParams.get('use_lora_text', False)
@@ -167,7 +169,7 @@ def run_fold(mdlParams, device, cv):
 
 
     # Best model 저장 + early stopping 둘 다 val_loss 기준 (patience epoch 동안 개선 없으면 중단)
-    early_stopping_patience = mdlParams.get('early_stopping_patience', 10)
+    early_stopping_patience = mdlParams.get('early_stopping_patience', 20)
     best_val_loss = np.inf
     epochs_without_improvement = 0
     start_time = time.time()
@@ -217,6 +219,8 @@ def run_fold(mdlParams, device, cv):
         mean_precision = np.mean(precision)
         mean_specificity = np.mean(specificity)
         mean_f1 = np.mean(f1)
+        ece = utils.expected_calibration_error(predictions, targets)
+        brier = utils.brier_score(predictions, targets)
 
         metrics_dict = {
             "epoch": epoch,
@@ -229,6 +233,8 @@ def run_fold(mdlParams, device, cv):
             "mean_recall": mean_recall,
             "mean_precision": mean_precision,
             "mean_specificity": mean_specificity,
+            "ece": ece,
+            "brier_score": brier,
             "learning_rate": modelVars['optimizer'].param_groups[0]['lr']
         }
 
