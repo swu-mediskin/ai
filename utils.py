@@ -559,6 +559,25 @@ class CostSensitiveCE(nn.Module):
         expected_cost = (self.cost_matrix[targets] * p).sum(dim=1)
         return (ce + self.lambda_cost * expected_cost).mean()
 
+def expected_calibration_error(predictions, targets, n_bins=15):
+    """Top-label confidence 기준 ECE (Guo et al. 2017). predictions/targets는 (N, numClasses)."""
+    confidences = np.max(predictions, axis=1)
+    correct = (np.argmax(predictions, axis=1) == np.argmax(targets, axis=1)).astype(float)
+    bin_edges = np.linspace(0, 1, n_bins + 1)
+    ece = 0.0
+    n = len(confidences)
+    for lo, hi in zip(bin_edges[:-1], bin_edges[1:]):
+        mask = (confidences > lo) & (confidences <= hi)
+        if mask.sum() > 0:
+            bin_acc = correct[mask].mean()
+            bin_conf = confidences[mask].mean()
+            ece += (mask.sum() / n) * abs(bin_acc - bin_conf)
+    return ece
+
+def brier_score(predictions, targets):
+    """다중클래스 Brier score. predictions/targets는 (N, numClasses)."""
+    return np.mean(np.sum((predictions - targets) ** 2, axis=1))
+
 def getErrClassification_mgpu(mdlParams, indices, modelVars, exclude_class=None):
     """Helper function to return the error of a set
     Args:

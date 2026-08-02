@@ -217,6 +217,8 @@ def run_fold(mdlParams, device, cv):
         mean_precision = np.mean(precision)
         mean_specificity = np.mean(specificity)
         mean_f1 = np.mean(f1)
+        ece = utils.expected_calibration_error(predictions, targets)
+        brier = utils.brier_score(predictions, targets)
 
         metrics_dict = {
             "epoch": epoch,
@@ -229,6 +231,8 @@ def run_fold(mdlParams, device, cv):
             "mean_recall": mean_recall,
             "mean_precision": mean_precision,
             "mean_specificity": mean_specificity,
+            "ece": ece,
+            "brier_score": brier,
             "learning_rate": modelVars['optimizer'].param_groups[0]['lr']
         }
 
