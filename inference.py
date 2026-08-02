@@ -10,7 +10,8 @@ from torchvision import transforms
 import models
 from meta2text import row2text
 
-BOOL_META_FIELDS = ['smoke', 'skin_cancer_history', 'itch', 'grew', 'hurt', 'changed', 'bleed', 'elevation']
+BOOL_META_FIELDS = ['smoke', 'drink', 'pesticide', 'skin_cancer_history', 'cancer_history',
+                     'itch', 'grew', 'hurt', 'changed', 'bleed', 'elevation']
 
 
 def build_text_tokens(meta_dict, mdlParams, tokenizer):
