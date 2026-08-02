@@ -19,7 +19,7 @@ def init(mdlParams_):
     val_csv = os.path.join(mdlParams['dataDir'], 'folds/fold0/val.csv')
 
     # 이름 설정
-    mdlParams['mdlName'] = 'bio_baseline2'  # 템플릿 사용, unfreeze/LoRA 없음 (BiomedCLIP 전체 freeze)
+    mdlParams['mdlName'] = 'bio_baseline2_meta17'  # 템플릿 사용, unfreeze/LoRA 없음 (BiomedCLIP 전체 freeze)
 
     # 모델 기본 설정
     mdlParams['model_type'] = 'biomedclip'

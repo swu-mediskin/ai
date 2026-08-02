@@ -58,7 +58,7 @@ def init(mdlParams_):
     mdlParams['fc_layers_after'] = [1024]
 
     # Cost Sensitive CE 관련 설정
-    mdlParams['use_cost_sensitive_ce'] = True
+    mdlParams['use_cost_sensitive_ce'] = False
     mdlParams['cost_sensitive_pairs'] = [('SCC', 'BCC', 3.0)]
     mdlParams['cost_sensitive_lambda'] = 1.0
 
