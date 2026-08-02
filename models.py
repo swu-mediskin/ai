@@ -432,12 +432,14 @@ class BiomedCLIPMultiModal(nn.Module):
             classifier_in = fusion_in
         self.classifier = nn.Linear(classifier_in, mdlParams['numClasses'])
 
-    def forward(self, inputs):
+    def forward(self, inputs, gradcam: bool = False):
         x, text_tokens = inputs
         text_tokens = text_tokens.long()
 
         if self.modality != 'text_only':
-            if self.freeze and not self.visual_trainable:
+            if gradcam:
+                image_features = self.clip.encode_image(x, normalize=True)
+            elif self.freeze and not self.visual_trainable:
                 with torch.no_grad():
                     image_features = self.clip.encode_image(x, normalize=True)
             else:
