@@ -124,6 +124,9 @@ def run_fold(mdlParams, device, cv):
             cost_matrix[j, i] = extra_cost
         cost_matrix = torch.tensor(cost_matrix, dtype=torch.float32).to(device)
         modelVars['criterion'] = utils.CostSensitiveCE(weights, cost_matrix, lambda_cost=mdlParams.get('cost_sensitive_lambda', 1.0))
+    elif mdlParams.get('use_focal_loss', False):
+        focal_alpha = weights if mdlParams.get('focal_alpha_weighted', True) else None
+        modelVars['criterion'] = utils.FocalLoss(gamma=mdlParams.get('focal_gamma', 2.0), alpha=focal_alpha)
     elif mdlParams.get('use_weighted_ce', False):
         modelVars['criterion'] = nn.CrossEntropyLoss(weight=weights)
     else:
