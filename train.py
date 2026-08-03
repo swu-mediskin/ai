@@ -113,17 +113,17 @@ def run_fold(mdlParams, device, cv):
 
     weights = mdlParams['class_weights'].to(device)
     if mdlParams.get('use_cost_sensitive_ce', False):
-        # 정답 클래스 기준 weighted CE에 특정 클래스 쌍(예: SCC<->BCC) 오분류 추가 비용을 더함.
-        # cost_sensitive_pairs: [(class_a, class_b, extra_cost), ...], 나머지 오분류 쌍은 기본 비용 1.0.
         class_name_to_idx = {'NEV': 0, 'BCC': 1, 'SCC': 2, 'MEL': 3}
         cost_matrix = np.ones((mdlParams['numClasses'], mdlParams['numClasses']))
         np.fill_diagonal(cost_matrix, 0)
-        for cls_a, cls_b, extra_cost in mdlParams.get('cost_sensitive_pairs', []):
-            i, j = class_name_to_idx[cls_a], class_name_to_idx[cls_b]
+        for true_cls, pred_cls, extra_cost in mdlParams.get('cost_sensitive_pairs', []):
+            i, j = class_name_to_idx[true_cls], class_name_to_idx[pred_cls]
             cost_matrix[i, j] = extra_cost
-            cost_matrix[j, i] = extra_cost
         cost_matrix = torch.tensor(cost_matrix, dtype=torch.float32).to(device)
         modelVars['criterion'] = utils.CostSensitiveCE(weights, cost_matrix, lambda_cost=mdlParams.get('cost_sensitive_lambda', 1.0))
+    elif mdlParams.get('use_focal_loss', False):
+        focal_alpha = weights if mdlParams.get('focal_alpha_weighted', True) else None
+        modelVars['criterion'] = utils.FocalLoss(gamma=mdlParams.get('focal_gamma', 2.0), alpha=focal_alpha)
     elif mdlParams.get('use_weighted_ce', False):
         modelVars['criterion'] = nn.CrossEntropyLoss(weight=weights)
     else:
