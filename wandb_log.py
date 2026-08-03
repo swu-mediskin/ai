@@ -5,12 +5,12 @@ pd.set_option('display.max_columns', None)
 pd.set_option('display.width', None)
 
 api = wandb.Api()
-run = api.run("jkjadeahn-university/mediskin/276dl1yl")
+run = api.run("jkjadeahn-university/mediskin/vcz920ke")
 
 history_df = run.history(samples=10000) 
 
 # best epoch 찾기
-best_epoch = history_df['epoch'][history_df['val_loss'].idxmin()]
+best_epoch = history_df['epoch'][history_df['mean_f1_score'].idxmax()]
 
 cols = ['epoch', 'val_loss', 'train_loss', 'accuracy',
         'mean_f1_score', 'mean_recall', 'mean_precision','mean_specificity',
