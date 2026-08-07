@@ -1,4 +1,4 @@
-﻿import torch
+import torch
 import numbers
 import numpy as np
 import functools
@@ -415,6 +415,12 @@ class BiomedCLIPMultiModal(nn.Module):
         self.fusion_method = mdlParams.get('fusion_method', 'concat')
         # modality: 'multimodal'(기본) / 'image_only' / 'text_only'
         self.modality = mdlParams.get('modality', 'multimodal')
+        if self.fusion_method == 'cross_attention':
+            self.cross_attn = nn.MultiheadAttention(
+                embed_dim=BIOMEDCLIP_EMBED_DIM,
+                num_heads=mdlParams.get('cross_attn_heads', 8),
+                dropout=mdlParams.get('cross_attn_dropout', 0.1),
+                batch_first=True)
         if self.modality == 'multimodal':
             fusion_in = BIOMEDCLIP_EMBED_DIM * 2 if self.fusion_method == 'concat' else BIOMEDCLIP_EMBED_DIM
         else:
@@ -460,6 +466,12 @@ class BiomedCLIPMultiModal(nn.Module):
             features = image_features * text_features
         elif self.fusion_method == 'average':
             features = (image_features + text_features) / 2
+        elif self.fusion_method == 'cross_attention':
+            # 서로를 query/key/value로 교차 참조(양방향)한 뒤 평균 -> (B, D) 유지.
+            img_q, txt_q = image_features.unsqueeze(1), text_features.unsqueeze(1)
+            img_attn, _ = self.cross_attn(img_q, txt_q, txt_q)
+            txt_attn, _ = self.cross_attn(txt_q, img_q, img_q) 
+            features = (img_attn.squeeze(1) + txt_attn.squeeze(1)) / 2
         else:
             features = torch.cat((image_features, text_features), dim=1)
 
