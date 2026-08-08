@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import time
 import base64
@@ -166,7 +167,7 @@ def _call_llm(base_text, image_path=None, model=LLM_MODEL, max_retries=3):
                     {"role": "user", "content": user_content},
                 ],
                 temperature=0.3,
-                max_tokens=200,
+                max_completion_tokens=200,
             )
             return resp.choices[0].message.content.strip()
         except Exception as e:
@@ -249,6 +250,61 @@ def build_llm_text_dict(df, img_dir=None, cache_path=None, save_every=20):
     if n_new % save_every != 0:
         _save_cache(cache, cache_path)
     print(f"[meta2text_llm] 총 {len(result)}건 중 신규 {n_new}건 GPT 확장, {len(result) - n_new}건 캐시 재사용")
+
+    return result
+
+
+_AUG_SUFFIX_RE = re.compile(r'_aug\d+(\.[^.]+)$')
+
+
+def build_llm_text_dict_deduped(df, cache_path=None, save_every=20):
+    _check_api_key()
+
+    if cache_path is None:
+        cache_path = CACHE_PATH
+    cache = _load_cache(cache_path)
+
+    groups = {}
+    for _, row in df.iterrows():
+        base_img_id = _AUG_SUFFIX_RE.sub(r'\1', row['img_id'])
+        groups.setdefault(base_img_id, []).append(row)
+
+    result = {}
+    n_new = 0
+    n_copied = 0
+    n_groups_done = 0
+    for base_img_id, rows in groups.items():
+        representative = next((r for r in rows if r['img_id'] == base_img_id), rows[0])
+        img_id = representative['img_id']
+
+        if img_id in cache:
+            expanded = cache[img_id]
+        else:
+            base_text = json.dumps(row2meta_dict(representative), ensure_ascii=False)
+            try:
+                expanded = _call_llm(base_text, image_path=None)
+            except Exception as e:
+                print(f"[meta2text_llm] LLM expansion failed for {img_id}: {e} -- falling back to template text")
+                expanded = row2text(representative)
+            cache[img_id] = expanded
+            n_new += 1
+
+        for row in rows:
+            rid = row['img_id']
+            if rid not in cache:
+                cache[rid] = expanded
+                n_copied += 1
+            result[rid] = cache[rid]
+
+        n_groups_done += 1
+        if n_groups_done % save_every == 0:
+            _save_cache(cache, cache_path)
+            print(f"[meta2text_llm] {n_groups_done}/{len(groups)}개 그룹 처리(신규 GPT {n_new}, 복사 {n_copied}) — 캐시 저장됨")
+
+    _save_cache(cache, cache_path)
+    n_reused = len(result) - n_new - n_copied
+    print(f"[meta2text_llm] 총 {len(result)}건(그룹 {len(groups)}개) 처리 완료 — "
+          f"GPT 신규 호출 {n_new}건, 복사 {n_copied}건, 기존 캐시 재사용 {n_reused}건")
 
     return result
 
