@@ -89,15 +89,21 @@ def load_checkpoint(model, mdlParams, cv, device, which='best'):
 
 
 def preprocess_image(img_path, mdlParams, device):
+    """PADDataset의 valInd 전처리(CenterCrop(1.5x input_size) -> Resize)와 동일하게 맞춤."""
     input_img = Image.open(img_path).convert('RGB')
+    input_size = mdlParams['input_size'][:2]
+    if input_img.size[0] < input_size[0] or input_img.size[1] < input_size[1]:
+        input_img = input_img.resize(tuple(input_size), Image.BILINEAR)
     tfm = transforms.Compose([
-        transforms.Resize(mdlParams['input_size'][:2]),
+        transforms.CenterCrop(np.int32(input_size[0] * 1.5)),
+        transforms.Resize(input_size),
         transforms.ToTensor(),
         transforms.Normalize(mean=mdlParams['setMean'], std=mdlParams['setStd']),
     ])
     tensor = tfm(input_img).unsqueeze(0).to(device)
     tensor.requires_grad_(True)
-    orig_resized = np.array(input_img.resize(tuple(mdlParams['input_size'][:2])))
+    cropped = transforms.CenterCrop(np.int32(input_size[0] * 1.5))(input_img)
+    orig_resized = np.array(cropped.resize(tuple(input_size)))
     return tensor, orig_resized
 
 
