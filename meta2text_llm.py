@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import time
 import base64
@@ -12,10 +13,10 @@ from meta2text import row2text, row2meta_dict, CSV_PATH
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
 CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
-CACHE_PATH = os.path.join(CACHE_DIR, 'new_llm_text_cache.json')
+CACHE_PATH = os.path.join(CACHE_DIR, 'new_llm_text_cache2.json')
 VISION_CACHE_PATH = os.path.join(CACHE_DIR, 'new_llm_vision_text_cache.json')
 
-LLM_MODEL = os.environ.get('LLM_META_MODEL', 'gpt-4o-mini')
+LLM_MODEL = os.environ.get('LLM_META_MODEL', 'gpt-5.4-mini')
 IMAGE_DETAIL = os.environ.get('LLM_IMAGE_DETAIL', 'low')
 
 SYSTEM_PROMPT = """
@@ -25,24 +26,32 @@ SYSTEM_PROMPT = """
 
 <input>
 아래 사용자 메시지로 환자/병변의 구조화된 raw 메타데이터가 JSON으로 주어집니다.
-필드 의미: age(나이), gender(성별), region(병변 부위), smoker(흡연 여부),
-skin_cancer_history(피부암 병력), itching/growing/hurting/changing/bleeding/elevating
-(각 병변 증상의 유무, true/false). 값이 없는 필드는 포함되지 않습니다 — 언급하지 마세요.
+필드 의미: age(나이), gender(성별), region(병변 부위), fitzpatrick_skin_type(Fitzpatrick 피부타입, 1~6),
+diameter_1_mm(병변의 수평 크기, mm), diameter_2_mm(병변의 수직 크기, mm), smoker(흡연 여부), drinks_alcohol(음주 여부),
+pesticide_exposure(살충제를 일상에서 사용하는지 여부), skin_cancer_history(피부암 병력),
+cancer_history(피부암 외 전신 암 병력),
+itching/growing/hurting/changing/bleeding/elevating(각 병변 증상의 유무, true/false). 
 </input>
 
 <task>
-주어진 메타데이터만 근거로, 실제 출판된 피부과 케이스 리포트와 같이 의학적 용어가 포함된 격식있는 문체로 서술을 작성하세요.
+주어진 메타데이터만 근거로, 실제 출판된 피부과 케이스 리포트와 같이 의학적 용어가 포함된 전문적인 문체로 서술을 작성하세요.
 </task>
 
 <constraints>
 - 메타데이터에(JSON) 명시된 것만 서술하고, 없는 사실은 절대 추가하지 마세요.
 - 진단명이나 악성/양성 여부를 언급하거나 암시하지 마세요. 
 - 입력 메타데이터로 뒷받침되지 않는 사실은 절대 추가하지 마세요.
-- 입력 JSON에 없는 키에 대해서는 "없다/해당 없다/기록 없음" 같은 부정문조차 절대 생성하지 마세요
+- [키가 아예 없는 경우] 입력 JSON에 아예 존재하지 않는 키(필드)에 대해서는 
+  "없다/해당 없다/기록 없음"과 같은 부정문을 포함해 어떤 형태로든 절대 언급하지 마세요. 
+  그 필드 자체가 존재하지 않는 것처럼 완전히 침묵하세요.
+- [키는 있지만 값이 false인 경우] 입력 JSON에 키가 존재하고 그 값이 false인 경우에는, 
+  이는 "해당 소견이 없음을 확인함"을 의미하므로 반드시 문장에 명시적으로 포함시켜야 합니다.
+- 즉, "필드가 아예 없음"과 "필드는 있지만 값이 false임"은 반드시 구분해야 합니다.
 </constraints>
 
 <output_format>
 - 반드시 영어로 작성하세요.
+- 동일한 의학 용어를 반복하기보다, 문맥에 맞는 동의어나 대체 표현을 적절히 활용하세요 
 - 순수 서술형 문단만 작성하세요. 
 - 마크다운 헤더(#, ##, ###), 리스트, 굵은 글씨 등의 포맷팅 요소를 절대 포함하지 마세요.
 </output_format>"""
@@ -54,13 +63,15 @@ VISION_SYSTEM_PROMPT = """<role>
 
 <input>
 환자/병변의 구조화된 raw 메타데이터(JSON)와 병변 사진을 함께 받습니다.
-필드 의미: age(나이), gender(성별), region(병변 부위), smoker(흡연 여부),
-skin_cancer_history(피부암 병력), itching/growing/hurting/changing/bleeding/elevating
-(각 병변 증상의 유무, true/false). 값이 없는 필드는 포함되지 않습니다 — 언급하지 마세요.
+필드 의미: age(나이), gender(성별), region(병변 부위), fitzpatrick_skin_type(Fitzpatrick 피부타입, 1~6),
+diameter_1_mm(병변의 수평 크기, mm), diameter_2_mm(병변의 수직 크기, mm), smoker(흡연 여부), drinks_alcohol(음주 여부),
+pesticide_exposure(살충제를 일상에서 사용하는지 여부), skin_cancer_history(피부암 병력),
+cancer_history(피부암 외 전신 암 병력),
+itching/growing/hurting/changing/bleeding/elevating(각 병변 증상의 유무, true/false). 
 </input>
 
 <task>
-메타데이터와 사진을 종합해서, 실제 출판된 피부과 케이스 리포트와 같이 의학적 용어가 포함된 격식있는 문체로 서술을 작성하세요.
+메타데이터와 사진을 종합해서, 실제 출판된 피부과 케이스 리포트와 같이 의학적 용어가 포함된 전문적인 문체로 서술을 작성하세요.
 </task>
 
 <visual_findings>
@@ -72,11 +83,17 @@ skin_cancer_history(피부암 병력), itching/growing/hurting/changing/bleeding
 - 사진에서 객관적으로 보이는 것과 메타데이터에(JSON) 명시된 것만 서술하고, 없는 사실은 절대 추가하지 마세요.
 - 진단명이나 악성/양성 여부를 언급하거나 암시하지 마세요. 
 - 사진이나 입력 메타데이터로 뒷받침되지 않는 사실은 절대 추가하지 마세요.
-- 입력 JSON에 없는 키에 대해서는 "없다/해당 없다/기록 없음" 같은 부정문조차 절대 생성하지 마세요
+- [키가 아예 없는 경우] 입력 JSON에 아예 존재하지 않는 키(필드)에 대해서는 
+  "없다/해당 없다/기록 없음"과 같은 부정문을 포함해 어떤 형태로든 절대 언급하지 마세요. 
+  그 필드 자체가 존재하지 않는 것처럼 완전히 침묵하세요.
+- [키는 있지만 값이 false인 경우] 입력 JSON에 키가 존재하고 그 값이 false인 경우에는, 
+  이는 "해당 소견이 없음을 확인함"을 의미하므로 반드시 문장에 명시적으로 포함시켜야 합니다.
+- 즉, "필드가 아예 없음"과 "필드는 있지만 값이 false임"은 반드시 구분해야 합니다.
 </constraints>
 
 <output_format>
 - 반드시 영어로 작성하세요.
+- 동일한 의학 용어를 반복하기보다, 문맥에 맞는 동의어나 대체 표현을 적절히 활용하세요 
 - 순수 서술형 문단만 작성하세요. 
 - 마크다운 헤더(#, ##, ###), 리스트, 굵은 글씨 등의 포맷팅 요소를 절대 포함하지 마세요.
 </output_format>"""
@@ -150,7 +167,7 @@ def _call_llm(base_text, image_path=None, model=LLM_MODEL, max_retries=3):
                     {"role": "user", "content": user_content},
                 ],
                 temperature=0.3,
-                max_tokens=200,
+                max_completion_tokens=200,
             )
             return resp.choices[0].message.content.strip()
         except Exception as e:
@@ -233,6 +250,61 @@ def build_llm_text_dict(df, img_dir=None, cache_path=None, save_every=20):
     if n_new % save_every != 0:
         _save_cache(cache, cache_path)
     print(f"[meta2text_llm] 총 {len(result)}건 중 신규 {n_new}건 GPT 확장, {len(result) - n_new}건 캐시 재사용")
+
+    return result
+
+
+_AUG_SUFFIX_RE = re.compile(r'_aug\d+(\.[^.]+)$')
+
+
+def build_llm_text_dict_deduped(df, cache_path=None, save_every=20):
+    _check_api_key()
+
+    if cache_path is None:
+        cache_path = CACHE_PATH
+    cache = _load_cache(cache_path)
+
+    groups = {}
+    for _, row in df.iterrows():
+        base_img_id = _AUG_SUFFIX_RE.sub(r'\1', row['img_id'])
+        groups.setdefault(base_img_id, []).append(row)
+
+    result = {}
+    n_new = 0
+    n_copied = 0
+    n_groups_done = 0
+    for base_img_id, rows in groups.items():
+        representative = next((r for r in rows if r['img_id'] == base_img_id), rows[0])
+        img_id = representative['img_id']
+
+        if img_id in cache:
+            expanded = cache[img_id]
+        else:
+            base_text = json.dumps(row2meta_dict(representative), ensure_ascii=False)
+            try:
+                expanded = _call_llm(base_text, image_path=None)
+            except Exception as e:
+                print(f"[meta2text_llm] LLM expansion failed for {img_id}: {e} -- falling back to template text")
+                expanded = row2text(representative)
+            cache[img_id] = expanded
+            n_new += 1
+
+        for row in rows:
+            rid = row['img_id']
+            if rid not in cache:
+                cache[rid] = expanded
+                n_copied += 1
+            result[rid] = cache[rid]
+
+        n_groups_done += 1
+        if n_groups_done % save_every == 0:
+            _save_cache(cache, cache_path)
+            print(f"[meta2text_llm] {n_groups_done}/{len(groups)}개 그룹 처리(신규 GPT {n_new}, 복사 {n_copied}) — 캐시 저장됨")
+
+    _save_cache(cache, cache_path)
+    n_reused = len(result) - n_new - n_copied
+    print(f"[meta2text_llm] 총 {len(result)}건(그룹 {len(groups)}개) 처리 완료 — "
+          f"GPT 신규 호출 {n_new}건, 복사 {n_copied}건, 기존 캐시 재사용 {n_reused}건")
 
     return result
 
