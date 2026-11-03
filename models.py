@@ -421,6 +421,20 @@ class BiomedCLIPMultiModal(nn.Module):
                 num_heads=mdlParams.get('cross_attn_heads', 8),
                 dropout=mdlParams.get('cross_attn_dropout', 0.1),
                 batch_first=True)
+        elif self.fusion_method == 'gated':
+            # GMU: 샘플·차원별 게이트 z로 두 모달리티를 섞음.
+            # h = z * tanh(W_v v) + (1 - z) * tanh(W_t t),  z = sigmoid(W_z [v; t])
+            D = BIOMEDCLIP_EMBED_DIM
+            self.gmu_img = nn.Linear(D, D)
+            self.gmu_txt = nn.Linear(D, D)
+            self.gmu_gate = nn.Linear(2 * D, D)
+        elif self.fusion_method == 'film':
+            # FiLM: 텍스트(메타데이터)가 이미지 피처의 채널별 scale/shift를 결정.
+            # h = (1 + gamma(t)) * v + beta(t). 마지막 층을 0으로 초기화해 학습 시작 시 h = v (항등)에서 출발.
+            D = BIOMEDCLIP_EMBED_DIM
+            self.film = nn.Linear(D, 2 * D)
+            nn.init.zeros_(self.film.weight)
+            nn.init.zeros_(self.film.bias)
         if self.modality == 'multimodal':
             fusion_in = BIOMEDCLIP_EMBED_DIM * 2 if self.fusion_method == 'concat' else BIOMEDCLIP_EMBED_DIM
         else:
@@ -472,6 +486,12 @@ class BiomedCLIPMultiModal(nn.Module):
             img_attn, _ = self.cross_attn(img_q, txt_q, txt_q)
             txt_attn, _ = self.cross_attn(txt_q, img_q, img_q) 
             features = (img_attn.squeeze(1) + txt_attn.squeeze(1)) / 2
+        elif self.fusion_method == 'gated':
+            z = torch.sigmoid(self.gmu_gate(torch.cat((image_features, text_features), dim=1)))
+            features = z * torch.tanh(self.gmu_img(image_features)) + (1 - z) * torch.tanh(self.gmu_txt(text_features))
+        elif self.fusion_method == 'film':
+            gamma, beta = self.film(text_features).chunk(2, dim=1)
+            features = (1 + gamma) * image_features + beta
         else:
             features = torch.cat((image_features, text_features), dim=1)
 
