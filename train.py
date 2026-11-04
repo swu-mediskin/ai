@@ -6,6 +6,7 @@ from torchvision import models
 from torch.utils.data import DataLoader
 import numpy as np
 import sklearn.preprocessing
+from sklearn.metrics import f1_score
 import os
 import sys
 import re
@@ -213,12 +214,25 @@ def run_fold(mdlParams, device, cv):
         res = utils.getErrClassification_mgpu(mdlParams, eval_set, modelVars)
         val_loss, accuracy, recall, precision, specificity, conf_matrix, f1, auc, auprc, predictions, targets, _, class_val_loss = res
 
-        class_names = ['NEV', 'BCC', 'SCC', 'MEL']
+        class_names = mdlParams.get('class_names', ['NEV', 'BCC', 'SCC', 'MEL'])
 
         mean_recall = np.mean(recall)
         mean_precision = np.mean(precision)
         mean_specificity = np.mean(specificity)
         mean_f1 = np.mean(f1)
+
+        # eval_classes가 있으면(예: 6클래스 학습 시 [0,1,2,3]) 그 클래스의 val 샘플만 골라
+        # 해당 클래스 확률 중 argmax로 F1을 계산하고, best 모델 선택/early stopping 기준으로 사용.
+        eval_classes = mdlParams.get('eval_classes')
+        if eval_classes is not None:
+            y_true_all = np.argmax(targets, axis=1)
+            eval_mask = np.isin(y_true_all, eval_classes)
+            y_true_sub = y_true_all[eval_mask]
+            y_pred_sub = np.array(eval_classes)[np.argmax(predictions[eval_mask][:, eval_classes], axis=1)]
+            f1_sub = f1_score(y_true_sub, y_pred_sub, labels=eval_classes, average=None, zero_division=0)
+            select_f1 = float(np.mean(f1_sub))
+        else:
+            select_f1 = mean_f1
         ece = utils.expected_calibration_error(predictions, targets)
         brier = utils.brier_score(predictions, targets)
 
@@ -237,6 +251,11 @@ def run_fold(mdlParams, device, cv):
             "brier_score": brier,
             "learning_rate": modelVars['optimizer'].param_groups[0]['lr']
         }
+
+        if eval_classes is not None:
+            metrics_dict["mean_f1_score_eval"] = select_f1
+            for c, f in zip(eval_classes, f1_sub):
+                metrics_dict[f"eval_metrics/{class_names[c]}_f1_score"] = f
 
         class_train_losses = class_train_loss_sum / (class_train_loss_count + 1e-8)
 
@@ -273,9 +292,9 @@ def run_fold(mdlParams, device, cv):
 
         print(f"Fold {cv} | Epoch {epoch} | Train Loss: {loss:.4f} | Acc: {accuracy:.4f} | Recall: {mean_recall:.4f} | Precision: {mean_precision:.4f}")
 
-        # Best Model 저장 + Early stopping (둘 다 mean F1-score 기준)
-        if mean_f1 > best_val_f1:
-            best_val_f1 = mean_f1
+        # Best Model 저장 + Early stopping (둘 다 mean F1-score 기준, eval_classes가 있으면 그 클래스 기준)
+        if select_f1 > best_val_f1:
+            best_val_f1 = select_f1
             epochs_without_improvement = 0
             state = {'epoch': epoch, 'state_dict': modelVars['model'].state_dict(), 'optimizer': modelVars['optimizer'].state_dict()}
             torch.save(state, mdlParams['saveDir'] + '/best_fold' + str(cv) + '.pt')
@@ -289,7 +308,8 @@ def run_fold(mdlParams, device, cv):
         duration = time.time() - start_time
         print(f"Fold {cv} | Epoch {epoch}/{mdlParams['epoch']} | "
                 f"Val Loss: {val_loss:.4f} | Acc: {accuracy:.4f} | F1-score: {mean_f1:.4f} | "
-                f"Recall: {mean_recall:.4f} | Precision: {mean_precision:.4f} | Specificity: {mean_specificity:.4f} ")
+                f"Recall: {mean_recall:.4f} | Precision: {mean_precision:.4f} | Specificity: {mean_specificity:.4f}"
+                + (f" | Eval F1({len(eval_classes)}cls): {select_f1:.4f}" if eval_classes is not None else ""))
 
     print(f"Fold {cv} Training Complete.")
     modelVars.clear()
